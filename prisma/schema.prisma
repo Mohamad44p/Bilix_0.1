@@ -1,0 +1,184 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model linked with Clerk authentication
+model User {
+  id                String         @id @default(cuid())
+  clerkId           String         @unique
+  email             String         @unique
+  firstName         String?
+  lastName          String?
+  profileImageUrl   String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  organizations     Organization[] @relation("OrganizationToUser")
+  invoices          Invoice[]
+  categories        Category[]
+  vendors           Vendor[]
+  conversations     Conversation[]
+  exports           ExportHistory[]
+  role              UserRole       @default(USER)
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  USER
+  VIEWER
+}
+
+// Organization model for multi-tenancy
+model Organization {
+  id           String    @id @default(cuid())
+  name         String
+  logoUrl      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  members      User[]    @relation("OrganizationToUser")
+  invoices     Invoice[]
+  categories   Category[]
+  vendors      Vendor[]
+  conversations Conversation[]
+  exports      ExportHistory[]
+}
+
+// Invoice model
+model Invoice {
+  id              String    @id @default(cuid())
+  invoiceNumber   String?
+  title           String?
+  vendorName      String?
+  issueDate       DateTime?
+  dueDate         DateTime?
+  amount          Float?
+  currency        String?   @default("USD")
+  status          InvoiceStatus @default(PENDING)
+  notes           String?
+  tags            String[]
+  categoryId      String?
+  category        Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  vendorId        String?
+  vendor          Vendor?    @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  originalFileUrl String?   // URL to the original file in Vercel Blob
+  thumbnailUrl    String?
+  extractedData   Json?     // Raw OCR data
+  languageCode    String?   // Language detected in the invoice
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  analysis        AIAnalysis?
+}
+
+// Category model for invoice categorization
+model Category {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  color           String?
+  icon            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  invoices        Invoice[]
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([name, userId])
+}
+
+// Vendor model for invoice vendors
+model Vendor {
+  id              String    @id @default(cuid())
+  name            String
+  email           String?
+  phone           String?
+  website         String?
+  address         String?
+  notes           String?
+  logoUrl         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  invoices        Invoice[]
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([name, userId])
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// AI Analysis model to store analysis results
+model AIAnalysis {
+  id              String    @id @default(cuid())
+  invoiceId       String    @unique
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  analysisData    Json      // Insights, warnings, predictions
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Conversation model for AI Assistant
+model Conversation {
+  id              String    @id @default(cuid())
+  title           String
+  messages        Message[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+}
+
+// Message model for conversation history
+model Message {
+  id              String        @id @default(cuid())
+  role            String        // user or assistant
+  content         String        @db.Text
+  timestamp       DateTime      @default(now())
+  conversationId  String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  relatedData     Json?         // For storing any related data with the message
+}
+
+// Export History model for tracking exports
+model ExportHistory {
+  id            String    @id @default(cuid())
+  exportId      String
+  fileName      String
+  fileUrl       String
+  format        String
+  count         Int
+  folderName    String?
+  createdAt     DateTime  @default(now())
+  userId        String
+  organizationId String?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+}
