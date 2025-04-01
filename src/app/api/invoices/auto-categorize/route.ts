@@ -1,188 +1,367 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import OpenAI from "openai";
+import { revalidatePath } from "next/cache";
 import db from "@/db/db";
-import { put } from "@vercel/blob";
-import { nanoid } from "nanoid";
+import { Category } from "@prisma/client";
+import { Invoice } from "@/lib/types";
 
-// Simplified function to extract text from invoice (in a real app, use OCR or AI vision API)
-async function extractInvoiceData(url: string) {
-  // This is a mock implementation - in a real app, you would use OCR or AI services
-  // to analyze the invoice image/PDF and extract the data from the provided url
-  console.log(`In production, this would process: ${url}`);
-  
-  // For demo purposes, return simulated data
-  return {
-    invoiceNumber: `INV-${Math.floor(Math.random() * 10000)}`,
-    vendorName: ["Amazon", "Microsoft", "Google", "Dell", "Apple"][Math.floor(Math.random() * 5)],
-    issueDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
-    dueDate: new Date(Date.now() + Math.random() * 30 * 24 * 60 * 60 * 1000),
-    amount: Math.floor(Math.random() * 1000) + 100,
-    currency: "USD",
-    language: "en",
-    notes: "Auto-extracted invoice data",
-  };
-}
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-// Function to suggest categories based on invoice data
-async function suggestCategories(
-  vendorName: string,
-  amount: number,
-  existingCategories: { id: string; name: string }[]
-) {
-  // Simple logic to suggest categories based on vendor name and amount
-  // In a real app, this would use AI/ML to analyze patterns
-  const suggestedCategories = [];
-  
-  const vendorToCategory: Record<string, string> = {
-    "Amazon": "Office Supplies",
-    "Microsoft": "Software",
-    "Google": "Cloud Services",
-    "Dell": "Hardware",
-    "Apple": "Hardware",
-  };
-  
-  // Add category based on vendor if it exists
-  if (vendorName && vendorToCategory[vendorName]) {
-    suggestedCategories.push(vendorToCategory[vendorName]);
-  }
-  
-  // Add category based on amount
-  if (amount > 500) {
-    suggestedCategories.push("Major Purchases");
-  } else if (amount < 100) {
-    suggestedCategories.push("Minor Expenses");
-  }
-  
-  // Add a general category
-  suggestedCategories.push("General Expenses");
-  
-  // Filter out categories that don't exist in the user's categories
-  const existingCategoryNames = existingCategories.map(c => c.name);
-  const validSuggestions = suggestedCategories.filter(c => 
-    existingCategoryNames.includes(c)
-  );
-  
-  // If no valid suggestions, add the first existing category as a fallback
-  if (validSuggestions.length === 0 && existingCategories.length > 0) {
-    validSuggestions.push(existingCategories[0].name);
-  }
-  
-  return validSuggestions;
-}
-
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { userId: clerkUserId } = await auth();
-    
-    if (!clerkUserId) {
+    // Check authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const dbUser = await db.user.findUnique({
-      where: { clerkId: clerkUserId },
-    });
+    // Get request body
+    const body = await req.json();
+    const { invoiceIds, options } = body;
 
-    if (!dbUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Parse the form data
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const fileUrl = formData.get("fileUrl") as string | null;
-    const metadataString = formData.get("metadata") as string | null;
-    
-    let existingInvoiceData = {};
-    if (metadataString) {
-      try {
-        existingInvoiceData = JSON.parse(metadataString);
-      } catch (e) {
-        console.error("Failed to parse metadata:", e);
-      }
-    }
-
-    // Get either the file or fileUrl
-    let invoiceFileUrl = fileUrl;
-    
-    if (file && !fileUrl) {
-      // Upload the file to Vercel Blob
-      const uniqueId = nanoid();
-      const fileName = `${uniqueId}-${file.name}`;
-      
-      const { url } = await put(fileName, file, {
-        access: "public",
-      });
-      
-      invoiceFileUrl = url;
-    }
-
-    if (!invoiceFileUrl) {
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
       return NextResponse.json(
-        { error: "File or fileUrl is required" },
+        { error: "Invalid request. Invoice IDs are required." },
         { status: 400 }
       );
     }
 
-    // Extract data from the invoice
-    const extractedData = await extractInvoiceData(invoiceFileUrl);
-    
-    // Check for duplicate invoices
-    const possibleDuplicates = await db.invoice.findMany({
-      where: {
-        userId: dbUser.id,
-        OR: [
-          {
-            invoiceNumber: extractedData.invoiceNumber,
-            vendorName: extractedData.vendorName,
-          },
-          {
-            amount: extractedData.amount,
-            vendorName: extractedData.vendorName,
-            issueDate: {
-              gte: new Date(extractedData.issueDate.getTime() - 7 * 24 * 60 * 60 * 1000),
-              lte: new Date(extractedData.issueDate.getTime() + 7 * 24 * 60 * 60 * 1000),
+    const confidenceThreshold = options?.confidenceThreshold || 0.7;
+    const model = options?.model || "gpt-4";
+    const autoApprove = options?.autoApprove || false;
+    const includePaid = options?.includePaid || false;
+
+    // Fetch user's categories and existing invoices for context
+    const [categories, invoices] = await Promise.all([
+      db.category.findMany({
+        where: { userId },
+      }),
+      db.invoice.findMany({
+        where: { 
+          id: { in: invoiceIds },
+          userId,
+          status: includePaid ? undefined : { not: "PAID" } 
+        },
+        include: {
+          vendor: true,
+        },
+      }),
+    ]);
+
+    if (invoices.length === 0) {
+      return NextResponse.json(
+        { error: "No matching invoices found." },
+        { status: 404 }
+      );
+    }
+
+    // Process each invoice
+    const results = await Promise.all(
+      invoices.map(async (invoice) => {
+        try {
+          // Skip invoices without file URLs
+          if (!invoice.originalFileUrl) {
+            return {
+              invoiceId: invoice.id,
+              success: false,
+              error: "No file URL available for this invoice",
+              changes: null,
+            };
+          }
+
+          // Get categories with embeddings for similarity matching
+          const categoryEmbeddings = await Promise.all(
+            categories.map(async (category) => {
+              // Simple implementation of getEmbedding function
+              const getEmbedding = async (text: string) => {
+                // In a real app, this would call an embedding API
+                // For now just return a mock embedding vector based on text length
+                return Array.from({ length: text.length % 10 + 5 }, () => Math.random());
+              };
+              
+              const embedding = await getEmbedding(category.name);
+              return { ...category, embedding };
+            })
+          );
+
+          // Process with appropriate AI approach
+          let aiResult;
+          if (model === "gpt-4" || model === "gpt-3.5") {
+            // Use OpenAI for categorization
+            aiResult = await processWithOpenAI(
+              invoice as Invoice, 
+              categoryEmbeddings, 
+              model,
+              confidenceThreshold
+            );
+          } else {
+            // Fallback to simpler heuristic approach
+            aiResult = await processWithHeuristics(
+              invoice as Invoice, 
+              categoryEmbeddings, 
+              confidenceThreshold
+            );
+          }
+
+          // Apply changes if auto-approve is enabled
+          if (autoApprove && aiResult.confidence >= confidenceThreshold) {
+            await db.invoice.update({
+              where: { id: invoice.id },
+              data: {
+                category: aiResult.category,
+                tags: aiResult.tags,
+                vendorId: aiResult.vendorId,
+                // Other fields to update
+              },
+            });
+          }
+
+          return {
+            invoiceId: invoice.id,
+            success: true,
+            changes: {
+              category: aiResult.category,
+              tags: aiResult.tags,
+              vendorId: aiResult.vendorId,
+              isDuplicate: aiResult.isDuplicate,
+              duplicateOf: aiResult.duplicateOf,
+              confidence: aiResult.confidence,
             },
-          },
-        ],
-      },
-      take: 1,
-    });
-    
-    const isDuplicate = possibleDuplicates.length > 0;
-    const duplicateOf = isDuplicate ? possibleDuplicates[0].id : undefined;
-    
-    // Get categories for suggestions
-    const categories = await db.category.findMany({
-      where: { userId: dbUser.id },
-      select: { id: true, name: true },
-    });
-    
-    // Get suggested tags based on content
-    const suggestedTags = ["invoice", extractedData.vendorName.toLowerCase()];
-    if (extractedData.amount > 500) suggestedTags.push("high-value");
-    
-    // Get suggested categories
-    const suggestedCategories = await suggestCategories(
-      extractedData.vendorName,
-      extractedData.amount,
-      categories
+          };
+        } catch (error) {
+          console.error(`Error processing invoice ${invoice.id}:`, error);
+          return {
+            invoiceId: invoice.id,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+            changes: null,
+          };
+        }
+      })
     );
-    
+
+    // Revalidate the invoices path
+    revalidatePath("/dashboard/invoices");
+
     return NextResponse.json({
-      extractedData: {
-        ...extractedData,
-        ...existingInvoiceData, // Merge with any existing data
-      },
-      isDuplicate,
-      duplicateOf,
-      categories: categories.filter(c => suggestedCategories.includes(c.name)),
-      tags: suggestedTags,
+      success: true,
+      results,
     });
   } catch (error) {
-    console.error("Error auto-categorizing invoice:", error);
+    console.error("Auto-categorization error:", error);
     return NextResponse.json(
-      { error: "Failed to auto-categorize invoice" },
+      { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
+}
+
+// Process an invoice using OpenAI
+async function processWithOpenAI(
+  invoice: Invoice, 
+  categories: Category[], 
+  model: string,
+  confidenceThreshold: number
+) {
+  // Format invoice data for the prompt
+  const invoiceData = {
+    invoiceNumber: invoice.invoiceNumber || "Unknown",
+    vendor: invoice.vendor?.name || "Unknown",
+    amount: invoice.amount || 0,
+    issueDate: invoice.issueDate 
+      ? new Date(invoice.issueDate).toLocaleDateString() 
+      : "Unknown",
+    description: invoice.description || "",
+  };
+
+  // Initially set a default confidence
+  let defaultConfidence = 0.7;
+  
+  // Use the confidenceThreshold to adjust the default confidence if needed
+  if (confidenceThreshold > 0.8) {
+    // For high threshold requirements, we'll be more conservative
+    defaultConfidence = 0.6;
+  }
+
+  // Format categories for the prompt
+  const categoryOptions = categories.map((cat) => cat.name).join(", ");
+
+  // Create a prompt for the AI
+  const prompt = `
+  You are an AI assistant that specializes in invoice categorization. 
+  Please analyze this invoice and categorize it appropriately.
+  
+  Invoice Details:
+  - Invoice Number: ${invoiceData.invoiceNumber}
+  - Vendor: ${invoiceData.vendor}
+  - Amount: ${invoiceData.amount}
+  - Date: ${invoiceData.issueDate}
+  - Description: ${invoiceData.description}
+  
+  Available Categories: ${categoryOptions}
+  
+  Please provide:
+  1. The most appropriate category from the list above.
+  2. A confidence score (0.0 to 1.0) for your category assignment.
+  3. 2-4 relevant tags for this invoice (e.g., "software", "subscription", "monthly").
+  4. Whether this looks like a potential duplicate invoice (true/false).
+  
+  Format your response as valid JSON like this:
+  {
+    "category": "Category Name",
+    "confidence": 0.95,
+    "tags": ["tag1", "tag2", "tag3"],
+    "isDuplicate": false,
+    "duplicateOf": null,
+    "explanation": "Brief explanation of your reasoning"
+  }
+  `;
+
+  // Get completion from OpenAI
+  const completion = await openai.chat.completions.create({
+    model: model === "gpt-4" ? "gpt-4-turbo" : "gpt-3.5-turbo",
+    messages: [
+      { role: "system", content: "You are an invoice categorization assistant." },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.3,
+    response_format: { type: "json_object" },
+  });
+
+  // Parse the AI response
+  const responseText = completion.choices[0].message.content || "{}";
+  const result = JSON.parse(responseText);
+
+  // Look up vendor ID if available
+  let vendorId = invoice.vendorId;
+  if (!vendorId && invoice.vendor?.name) {
+    // Try to find or create a vendor
+    const vendor = await db.vendor.findFirst({
+      where: {
+        userId: invoice.userId,
+        name: { equals: invoice.vendor.name, mode: "insensitive" },
+      },
+    });
+    
+    if (vendor) {
+      vendorId = vendor.id;
+    }
+  }
+
+  return {
+    category: result.category,
+    confidence: result.confidence || defaultConfidence,
+    tags: result.tags || [],
+    vendorId,
+    isDuplicate: result.isDuplicate || false,
+    duplicateOf: result.duplicateOf || null,
+    explanation: result.explanation || "",
+  };
+}
+
+// Process an invoice using heuristics and similarity matching
+async function processWithHeuristics(
+  invoice: Invoice, 
+  categories: Category[],
+  confidenceThreshold: number
+) {
+  // Simple heuristic categorization based on vendor name and description
+  const bestMatch = {
+    category: "",
+    confidence: 0,
+    tags: [] as string[],
+  };
+
+  // Use vendor name for tags
+  const tags = [];
+  if (invoice.vendor?.name) {
+    tags.push(invoice.vendor.name.toLowerCase().split(' ')[0]);
+  }
+
+  // Check invoice description against categories
+  const description = invoice.description?.toLowerCase() || "";
+  
+  if (description) {
+    // Try to extract meaningful tags from description
+    const words = description.split(/\s+/);
+    const potentialTags = words
+      .filter((word: string) => word.length > 3)
+      .filter((word: string) => !["invoice", "payment", "receipt", "charge", "bill"].includes(word));
+    
+    if (potentialTags.length > 0) {
+      tags.push(...potentialTags.slice(0, 2));
+    }
+  }
+  
+  // Find similar invoices to check for duplicates
+  const similarInvoices = await db.invoice.findMany({
+    where: {
+      userId: invoice.userId,
+      id: { not: invoice.id },
+      OR: [
+        { vendorId: invoice.vendorId },
+        { amount: invoice.amount },
+      ],
+      createdAt: {
+        gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
+      },
+    },
+    take: 5,
+  });
+  
+  // Check for potential duplicates
+  const isPotentialDuplicate = similarInvoices.some(
+    (similar) => 
+      similar.vendorId === invoice.vendorId && 
+      similar.amount === invoice.amount
+  );
+
+  // Find most similar category based on name
+  for (const category of categories) {
+    const categoryName = category.name.toLowerCase();
+    
+    // Check for exact mentions
+    if (description.includes(categoryName)) {
+      bestMatch.category = category.name;
+      bestMatch.confidence = 0.9;
+      break;
+    }
+    
+    // Check vendor name against category name
+    if (invoice.vendor?.name && invoice.vendor.name.toLowerCase().includes(categoryName)) {
+      bestMatch.category = category.name;
+      bestMatch.confidence = 0.8;
+      break;
+    }
+  }
+  
+  // If no good match found, use a default category
+  if (bestMatch.confidence < confidenceThreshold) {
+    // Try to guess based on amount patterns
+    if (invoice.amount && invoice.amount < 50) {
+      bestMatch.category = "Miscellaneous";
+      bestMatch.confidence = 0.6;
+    } else if (invoice.amount && invoice.amount > 1000) {
+      bestMatch.category = "Equipment";
+      bestMatch.confidence = 0.5;
+    } else {
+      // Default fallback
+      bestMatch.category = "Uncategorized";
+      bestMatch.confidence = 0.3;
+    }
+  }
+  
+  return {
+    category: bestMatch.category,
+    confidence: bestMatch.confidence,
+    tags: [...new Set(tags)].slice(0, 4), // Unique tags, max 4
+    vendorId: invoice.vendorId,
+    isDuplicate: isPotentialDuplicate,
+    duplicateOf: isPotentialDuplicate ? similarInvoices[0]?.id : null,
+    explanation: "Categorized using heuristic pattern matching",
+  };
 } 

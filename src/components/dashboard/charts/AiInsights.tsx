@@ -1,68 +1,68 @@
 "use client";
 
-import {
-  Sparkles,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-} from "lucide-react";
+import { TrendingUp, Lightbulb, PieChart, Calendar, AlertTriangle } from "lucide-react";
 
-const AiInsights = () => {
+interface AiInsight {
+  id: string;
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+}
+
+// This is a placeholder component until real AI insights can be generated
+export default function AiInsights() {
+  // Placeholder insights that would come from a real AI analysis
+  const insights: AiInsight[] = [
+    {
+      id: "insight-1",
+      title: "Revenue Trend",
+      description: "Your revenue has increased by 23% compared to the previous period. This is mainly due to increased sales in the technology category.",
+      icon: <TrendingUp className="h-5 w-5 text-blue-500" />
+    },
+    {
+      id: "insight-2",
+      title: "Expense Optimization",
+      description: "You could save $1,250 monthly by consolidating your software subscriptions. Several overlapping services were detected.",
+      icon: <Lightbulb className="h-5 w-5 text-amber-500" />
+    },
+    {
+      id: "insight-3",
+      title: "Category Analysis",
+      description: "Marketing expenses represent 32% of your total spending, above the industry average of 24% for your business size.",
+      icon: <PieChart className="h-5 w-5 text-purple-500" />
+    },
+    {
+      id: "insight-4",
+      title: "Payment Timing",
+      description: "Your clients take an average of 37 days to pay invoices, which is 7 days longer than the previous quarter.",
+      icon: <Calendar className="h-5 w-5 text-green-500" />
+    },
+    {
+      id: "insight-5",
+      title: "Risk Assessment",
+      description: "Two clients account for 45% of your revenue, representing a potential cash flow risk if either reduces their business.",
+      icon: <AlertTriangle className="h-5 w-5 text-red-500" />
+    }
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border p-3 bg-gradient-to-r from-blue-50 to-blue-50/30 dark:from-blue-950/50 dark:to-blue-950/20">
-        <div className="flex items-start gap-3">
-          <TrendingUp className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-sm">Revenue Growth</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Your June revenue has increased by 18.2% compared to May. This is
-              higher than your 12-month average growth of 11.4%.
-            </p>
+      {insights.map((insight) => (
+        <div 
+          key={insight.id} 
+          className="p-3 rounded-lg border border-border/60 transition-all hover:border-border hover:bg-accent/50"
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 bg-muted rounded-md p-1.5 flex-shrink-0">
+              {insight.icon}
+            </div>
+            <div>
+              <h4 className="text-sm font-medium">{insight.title}</h4>
+              <p className="text-sm text-muted-foreground mt-1">{insight.description}</p>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="rounded-lg border p-3 bg-gradient-to-r from-amber-50 to-amber-50/30 dark:from-amber-950/50 dark:to-amber-950/20">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-sm">Seasonal Trend Detected</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Based on historical data, you may experience a 15-20% decline in
-              revenue during August. Consider planning for this reduction.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-lg border p-3 bg-gradient-to-r from-green-50 to-green-50/30 dark:from-green-950/50 dark:to-green-950/20">
-        <div className="flex items-start gap-3">
-          <Sparkles className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-sm">Cost Optimization</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              AI analysis identified potential savings of $2,750/month by
-              consolidating subscriptions from multiple vendors.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-lg border p-3 bg-gradient-to-r from-red-50 to-red-50/30 dark:from-red-950/50 dark:to-red-950/20">
-        <div className="flex items-start gap-3">
-          <TrendingDown className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-sm">Invoice Aging</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Your average days to payment has increased to 32 days (previously
-              28 days). This is affecting your cash flow.
-            </p>
-          </div>
-        </div>
-      </div>
+      ))}
     </div>
   );
-};
-
-export default AiInsights;
+}

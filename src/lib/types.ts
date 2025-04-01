@@ -9,6 +9,9 @@ export interface Invoice {
   issueDate?: Date | null;
   dueDate?: Date | null;
   amount?: number | null;
+  totalAmount?: number | null; // Alias for amount for backward compatibility
+  taxAmount?: number | null;
+  description?: string | null;
   currency?: string | null;
   status: InvoiceStatus;
   notes?: string | null;

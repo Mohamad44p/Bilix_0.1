@@ -1,87 +1,141 @@
 "use client";
 
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+import { ApexOptions } from "apexcharts";
 
-// Mock data for cash flow projection
-const data = [
-  { name: "June", actual: 25000, projected: 25000 },
-  { name: "July", actual: 28500, projected: 28500 },
-  { name: "August", actual: null, projected: 27000 },
-  { name: "September", actual: null, projected: 31000 },
-  { name: "October", actual: null, projected: 33500 },
-];
+// Dynamically import ApexCharts to avoid SSR issues
+const ReactApexChart = dynamic(() => import("react-apexcharts"), { ssr: false });
 
-const CashFlowChart = () => {
-  return (
-    <div className="h-[250px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
-          data={data}
-          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-        >
-          <defs>
-            <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
-            </linearGradient>
-            <linearGradient id="colorProjected" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#64748b" stopOpacity={0.5} />
-              <stop offset="95%" stopColor="#64748b" stopOpacity={0.1} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid
-            strokeDasharray="3 3"
-            vertical={false}
-            stroke="#f0f0f0"
-          />
-          <XAxis dataKey="name" />
-          <YAxis tickFormatter={(value: number) => `$${value / 1000}k`} width={60} />
-          <Tooltip
-            formatter={(value: string | number | Array<string | number>) => {
-              if (typeof value === 'number') {
-                return [`$${value.toLocaleString()}`, ""];
-              }
-              return [String(value), ""];
-            }}
-            contentStyle={{
-              backgroundColor: "rgba(255, 255, 255, 0.8)",
-              borderRadius: "0.375rem",
-              border: "1px solid #e2e8f0",
-            }}
-          />
-          <Legend />
-          <Area
-            type="monotone"
-            dataKey="actual"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#colorActual)"
-            name="Actual"
-          />
-          <Area
-            type="monotone"
-            dataKey="projected"
-            stroke="#64748b"
-            strokeDasharray="5 5"
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#colorProjected)"
-            name="Projected"
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
+type ChartDataPoint = {
+  x: string;
+  y: number;
 };
 
-export default CashFlowChart;
+type ChartSeries = {
+  name: string;
+  data: ChartDataPoint[];
+};
+
+interface CashFlowChartProps {
+  projectionData: ChartSeries[];
+}
+
+export default function CashFlowChart({ projectionData }: CashFlowChartProps) {
+  const [chartOptions, setChartOptions] = useState<ApexOptions>({});
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+
+    setChartOptions({
+      chart: {
+        type: 'bar',
+        height: 350,
+        stacked: true,
+        toolbar: {
+          show: false
+        },
+        zoom: {
+          enabled: false
+        },
+        fontFamily: 'inherit',
+      },
+      colors: ['#22c55e', '#ef4444'],
+      plotOptions: {
+        bar: {
+          horizontal: false,
+          borderRadius: 5,
+          columnWidth: '60%',
+        },
+      },
+      dataLabels: {
+        enabled: false
+      },
+      stroke: {
+        width: 2,
+        colors: ['transparent']
+      },
+      grid: {
+        borderColor: '#f1f1f1',
+        row: {
+          colors: ['transparent', 'transparent'],
+          opacity: 0.5
+        },
+      },
+      xaxis: {
+        categories: projectionData[0]?.data.map((d: ChartDataPoint) => {
+          // Convert YYYY-MM to Month YYYY
+          const [year, month] = d.x.split('-');
+          const monthName = new Date(parseInt(year), parseInt(month) - 1, 1)
+            .toLocaleDateString('en-US', { month: 'long' });
+          return `${monthName} ${year}`;
+        }) || [],
+        axisBorder: {
+          show: false,
+        },
+        axisTicks: {
+          show: false,
+        }
+      },
+      yaxis: {
+        labels: {
+          formatter: function(value: number) {
+            return '$' + value.toLocaleString();
+          }
+        },
+      },
+      tooltip: {
+        y: {
+          formatter: function(value: number) {
+            return '$' + value.toLocaleString();
+          }
+        }
+      },
+      legend: {
+        position: 'top',
+        horizontalAlign: 'right',
+        offsetY: -15
+      },
+      fill: {
+        opacity: 1
+      }
+    });
+  }, [projectionData]);
+
+  // Format data for the chart
+  const formatChartData = () => {
+    if (!projectionData || projectionData.length === 0) return [];
+    
+    return projectionData.map(series => ({
+      name: series.name,
+      data: series.data.map((point: ChartDataPoint) => point.y)
+    }));
+  };
+
+  // Don't render the chart on the server side
+  if (!mounted) {
+    return (
+      <div className="h-[350px] w-full flex items-center justify-center bg-muted/20">
+        <p className="text-muted-foreground">Loading chart...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[350px]">
+      {projectionData && projectionData.length > 0 ? (
+        <ReactApexChart
+          options={chartOptions}
+          series={formatChartData()}
+          type="bar"
+          height={350}
+        />
+      ) : (
+        <div className="h-full w-full flex items-center justify-center">
+          <p className="text-muted-foreground">No projection data available</p>
+        </div>
+      )}
+    </div>
+  );
+}

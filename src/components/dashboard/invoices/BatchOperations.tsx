@@ -10,6 +10,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 
 interface BatchOperationsProps {
   selectedCount: number;
@@ -36,6 +38,9 @@ export function BatchOperations({
 }: BatchOperationsProps) {
   const [tagInput, setTagInput] = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
+  const [currentOperation, setCurrentOperation] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Handle direct export button click
   const handleExportClick = () => {
@@ -45,10 +50,191 @@ export function BatchOperations({
   // Handle export with options
   const handleExport = async (options: ExportOptions) => {
     try {
+      setCurrentOperation("export");
+      setProgress(10);
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 500);
+      
       // Use the onBatchExport callback for actual export
       await onBatchExport(options);
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      setSuccessMessage(`Successfully exported ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}`);
+      
+      // Clear success message after a delay
+      setTimeout(() => {
+        setCurrentOperation(null);
+        setProgress(0);
+        setSuccessMessage(null);
+      }, 3000);
     } catch (error) {
       console.error("Export failed:", error);
+      setCurrentOperation(null);
+      setProgress(0);
+    }
+  };
+  
+  // Handle approve operation with progress tracking
+  const handleApprove = async () => {
+    try {
+      setCurrentOperation("approve");
+      setProgress(10);
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 300);
+      
+      await onBatchApprove();
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      setSuccessMessage(`Successfully approved ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}`);
+      
+      // Clear success message after a delay
+      setTimeout(() => {
+        setCurrentOperation(null);
+        setProgress(0);
+        setSuccessMessage(null);
+      }, 3000);
+    } catch (error) {
+      console.error("Approve failed:", error);
+      setCurrentOperation(null);
+      setProgress(0);
+    }
+  };
+  
+  // Handle archive operation with progress tracking
+  const handleArchive = async () => {
+    try {
+      setCurrentOperation("archive");
+      setProgress(10);
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 15;
+        });
+      }, 300);
+      
+      await onBatchArchive();
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      setSuccessMessage(`Successfully archived ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}`);
+      
+      // Clear success message after a delay
+      setTimeout(() => {
+        setCurrentOperation(null);
+        setProgress(0);
+        setSuccessMessage(null);
+      }, 3000);
+    } catch (error) {
+      console.error("Archive failed:", error);
+      setCurrentOperation(null);
+      setProgress(0);
+    }
+  };
+  
+  // Handle delete operation with progress tracking
+  const handleDelete = async () => {
+    try {
+      setCurrentOperation("delete");
+      setProgress(10);
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 20;
+        });
+      }, 250);
+      
+      await onBatchDelete();
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      setSuccessMessage(`Successfully deleted ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}`);
+      
+      // Clear success message after a delay
+      setTimeout(() => {
+        setCurrentOperation(null);
+        setProgress(0);
+        setSuccessMessage(null);
+      }, 3000);
+    } catch (error) {
+      console.error("Delete failed:", error);
+      setCurrentOperation(null);
+      setProgress(0);
+    }
+  };
+  
+  // Handle tag operation with progress tracking
+  const handleTagSubmit = async () => {
+    if (!tagInput.trim()) return;
+    
+    const tags = tagInput
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    
+    if (tags.length === 0) return;
+    
+    try {
+      setCurrentOperation("tag");
+      setProgress(10);
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 300);
+      
+      await onBatchTag(tags);
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      setSuccessMessage(`Successfully tagged ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}`);
+      
+      // Clear input and success message after a delay
+      setTagInput("");
+      setTimeout(() => {
+        setCurrentOperation(null);
+        setProgress(0);
+        setSuccessMessage(null);
+      }, 3000);
+    } catch (error) {
+      console.error("Tagging failed:", error);
+      setCurrentOperation(null);
+      setProgress(0);
     }
   };
 
@@ -82,48 +268,82 @@ export function BatchOperations({
             <span>{errorMessage}</span>
           </div>
         )}
+        
+        {successMessage && (
+          <div className="bg-green-100 text-green-800 p-2 rounded text-sm flex items-center space-x-2">
+            <CheckCircle className="h-4 w-4" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+        
+        {currentOperation && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm capitalize">
+                {currentOperation === "tag" ? "Applying tags" : `${currentOperation}ing invoices`}
+              </span>
+              <span className="text-xs text-muted-foreground">{progress}%</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={onBatchApprove}
-            disabled={isLoading}
+            onClick={handleApprove}
+            disabled={isLoading || !!currentOperation}
           >
-            {isLoading ? (
+            {currentOperation === "approve" ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
             )}
             Approve
+            {selectedCount > 10 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {selectedCount}
+              </Badge>
+            )}
           </Button>
           
           <Button
             variant="outline"
             size="sm"
-            onClick={onBatchArchive}
-            disabled={isLoading}
+            onClick={handleArchive}
+            disabled={isLoading || !!currentOperation}
           >
-            {isLoading ? (
+            {currentOperation === "archive" ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Archive className="h-4 w-4 mr-2" />
             )}
             Archive
+            {selectedCount > 10 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {selectedCount}
+              </Badge>
+            )}
           </Button>
           
           <Button
             variant="outline"
             size="sm"
             onClick={handleExportClick}
-            disabled={isLoading}
+            disabled={isLoading || !!currentOperation}
           >
-            {isLoading ? (
+            {currentOperation === "export" ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Download className="h-4 w-4 mr-2" />
             )}
             Export
+            {selectedCount > 10 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {selectedCount}
+              </Badge>
+            )}
           </Button>
           
           <Popover>
@@ -131,14 +351,19 @@ export function BatchOperations({
               <Button
                 variant="outline"
                 size="sm"
-                disabled={isLoading}
+                disabled={isLoading || !!currentOperation}
               >
-                {isLoading ? (
+                {currentOperation === "tag" ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Tag className="h-4 w-4 mr-2" />
                 )}
                 Add Tags
+                {selectedCount > 10 && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {selectedCount}
+                  </Badge>
+                )}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80">
@@ -152,23 +377,35 @@ export function BatchOperations({
                     placeholder="e.g., important, tax, reviewed"
                     value={tagInput}
                     onChange={(e) => setTagInput(e.target.value)}
-                  />
-                  <Button
-                    onClick={() => {
-                      if (tagInput.trim()) {
-                        onBatchTag(
-                          tagInput
-                            .split(",")
-                            .map((tag) => tag.trim())
-                            .filter(Boolean)
-                        );
-                        setTagInput("");
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleTagSubmit();
                       }
                     }}
-                    disabled={!tagInput.trim() || isLoading}
+                  />
+                  <Button
+                    onClick={handleTagSubmit}
+                    disabled={!tagInput.trim() || isLoading || !!currentOperation}
                   >
                     Add
                   </Button>
+                </div>
+                
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {["important", "tax", "2023", "receipt", "expense"].map(tag => (
+                    <Badge 
+                      key={tag}
+                      variant="outline" 
+                      className="cursor-pointer"
+                      onClick={() => {
+                        if (tagInput.includes(tag)) return;
+                        const newInput = tagInput ? `${tagInput}, ${tag}` : tag;
+                        setTagInput(newInput);
+                      }}
+                    >
+                      + {tag}
+                    </Badge>
+                  ))}
                 </div>
               </div>
             </PopoverContent>
@@ -177,10 +414,10 @@ export function BatchOperations({
           <Button
             variant="destructive"
             size="sm"
-            onClick={onBatchDelete}
-            disabled={isLoading}
+            onClick={handleDelete}
+            disabled={isLoading || !!currentOperation}
           >
-            {isLoading ? (
+            {currentOperation === "delete" ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Trash2 className="h-4 w-4 mr-2" />

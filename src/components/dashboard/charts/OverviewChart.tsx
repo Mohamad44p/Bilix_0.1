@@ -1,17 +1,12 @@
 "use client";
+import { Card } from "@/components/ui/card";
+import { TimeframeOption } from "@/lib/actions/dashboard";
 import { useEffect, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import dynamic from "next/dynamic";
+import { ApexOptions } from "apexcharts";
+
+// Dynamically import ApexCharts to avoid SSR issues
+const ReactApexChart = dynamic(() => import("react-apexcharts"), { ssr: false });
 
 // Mock data for the chart
 const generateMockData = (type: string, timeframe: string) => {
@@ -51,135 +46,170 @@ const generateMockData = (type: string, timeframe: string) => {
   });
 };
 
-interface ChartDataPoint {
-  name: string;
-  revenue: number;
-  expenses: number;
-  profit: number;
-}
-
-interface OverviewChartProps {
-  timeframe: string;
-  type: "revenue" | "expenses" | "combined";
-}
-
-const OverviewChart = ({ timeframe, type }: OverviewChartProps) => {
-  const [data, setData] = useState<ChartDataPoint[]>([]);
-
-  useEffect(() => {
-    // Generate mock data based on timeframe
-    setData(generateMockData(type, timeframe));
-  }, [timeframe, type]);
-
-  return (
-    <div className="h-[300px] w-full px-4">
-      <ResponsiveContainer width="100%" height="100%">
-        {type === "combined" ? (
-          <BarChart
-            data={data}
-            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-          >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-              stroke="#f0f0f0"
-            />
-            <XAxis dataKey="name" />
-            <YAxis tickFormatter={(value) => `$${value / 1000}k`} width={60} />
-            <Tooltip
-              formatter={(value: string | number | Array<string | number>) => {
-                if (typeof value === 'number') {
-                  return [`$${value.toLocaleString()}`, ""];
-                }
-                return [String(value), ""]; // Fallback for other types
-              }}
-              contentStyle={{
-                backgroundColor: "rgba(255, 255, 255, 0.8)",
-                borderRadius: "0.375rem",
-                border: "1px solid #e2e8f0",
-              }}
-            />
-            <Legend />
-            <Bar
-              dataKey="revenue"
-              fill="#3b82f6"
-              name="Revenue"
-              radius={[4, 4, 0, 0]}
-            />
-            <Bar
-              dataKey="expenses"
-              fill="#ef4444"
-              name="Expenses"
-              radius={[4, 4, 0, 0]}
-            />
-            <Bar
-              dataKey="profit"
-              fill="#22c55e"
-              name="Profit"
-              radius={[4, 4, 0, 0]}
-            />
-          </BarChart>
-        ) : (
-          <AreaChart
-            data={data}
-            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-          >
-            <defs>
-              <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
-              </linearGradient>
-              <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="#ef4444" stopOpacity={0.1} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-              stroke="#f0f0f0"
-            />
-            <XAxis dataKey="name" />
-            <YAxis tickFormatter={(value) => `$${value / 1000}k`} width={60} />
-            <Tooltip
-              formatter={(value: string | number | Array<string | number>) => {
-                if (typeof value === 'number') {
-                  return [`$${value.toLocaleString()}`, ""];
-                }
-                return [String(value), ""]; // Fallback for other types
-              }}
-              contentStyle={{
-                backgroundColor: "rgba(255, 255, 255, 0.8)",
-                borderRadius: "0.375rem",
-                border: "1px solid #e2e8f0",
-              }}
-            />
-            <Legend />
-            {type === "revenue" && (
-              <Area
-                type="monotone"
-                dataKey="revenue"
-                stroke="#3b82f6"
-                fillOpacity={1}
-                fill="url(#colorRevenue)"
-                name="Revenue"
-              />
-            )}
-            {type === "expenses" && (
-              <Area
-                type="monotone"
-                dataKey="expenses"
-                stroke="#ef4444"
-                fillOpacity={1}
-                fill="url(#colorExpenses)"
-                name="Expenses"
-              />
-            )}
-          </AreaChart>
-        )}
-      </ResponsiveContainer>
-    </div>
-  );
+type ChartDataPoint = {
+  x: string;
+  y: number;
 };
 
-export default OverviewChart;
+type ChartSeries = {
+  name: string;
+  data: ChartDataPoint[];
+};
+
+interface OverviewChartProps {
+  timeframe: TimeframeOption;
+  type: "revenue" | "expenses" | "combined";
+  chartData: ChartSeries[];
+}
+
+export default function OverviewChart({ 
+  timeframe, 
+  type,
+  chartData
+}: OverviewChartProps) {
+  const [chartOptions, setChartOptions] = useState<ApexOptions>({});
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+
+    // Configure chart options
+    setChartOptions({
+      chart: {
+        type: 'area',
+        height: 350,
+        toolbar: {
+          show: false
+        },
+        zoom: {
+          enabled: false
+        },
+        fontFamily: 'inherit',
+      },
+      colors: ['#2563eb', '#ef4444', '#10b981'],
+      dataLabels: {
+        enabled: false
+      },
+      stroke: {
+        curve: 'smooth',
+        width: 2
+      },
+      fill: {
+        type: 'gradient',
+        gradient: {
+          shadeIntensity: 1,
+          opacityFrom: 0.3,
+          opacityTo: 0.1,
+          stops: [0, 95, 100]
+        }
+      },
+      grid: {
+        borderColor: '#f1f1f1',
+        row: {
+          colors: ['transparent', 'transparent'],
+          opacity: 0.5
+        },
+      },
+      markers: {
+        size: 4,
+        colors: ["#2563eb", "#ef4444", "#10b981"],
+        strokeColors: "#fff",
+        strokeWidth: 2,
+        hover: {
+          size: 6,
+        }
+      },
+      xaxis: {
+        type: 'category',
+        tickAmount: 6,
+        tooltip: {
+          enabled: false
+        }
+      },
+      yaxis: {
+        labels: {
+          formatter: function(value: number) {
+            return '$' + value.toLocaleString();
+          }
+        }
+      },
+      tooltip: {
+        x: {
+          format: timeframe === "1y" ? 'MMM yyyy' : 'dd MMM yyyy'
+        },
+        y: {
+          formatter: function(value: number) {
+            return '$' + value.toLocaleString();
+          }
+        }
+      },
+      legend: {
+        position: 'top',
+        horizontalAlign: 'right',
+        offsetY: -15
+      }
+    });
+  }, [timeframe, type]);
+
+  // Format the chart data based on the timeframe
+  const formatXAxisLabels = () => {
+    if (!chartData || !chartData[0]?.data) return [];
+    
+    return chartData.map(series => ({
+      ...series,
+      data: series.data.map((point: ChartDataPoint) => {
+        // Format date labels based on timeframe
+        let label = point.x;
+        
+        if (timeframe === "7d" || timeframe === "30d") {
+          // For daily data, format as "Jan 1"
+          const date = new Date(point.x);
+          label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } else if (timeframe === "90d" && point.x.includes("W")) {
+          // For weekly data, format as "Week 1, Jan"
+          const [year, month, week] = point.x.split(/[-W]/);
+          const monthName = new Date(parseInt(year), parseInt(month) - 1, 1)
+            .toLocaleDateString('en-US', { month: 'short' });
+          label = `Week ${week}, ${monthName}`;
+        } else if (timeframe === "1y") {
+          // For monthly data, format as "Jan 2023"
+          const [year, month] = point.x.split('-');
+          const monthName = new Date(parseInt(year), parseInt(month) - 1, 1)
+            .toLocaleDateString('en-US', { month: 'short' });
+          label = `${monthName} ${year}`;
+        }
+        
+        return {
+          x: label,
+          y: point.y
+        };
+      })
+    }));
+  };
+
+  // Don't render the chart on the server side
+  if (!mounted) {
+    return (
+      <div className="h-[400px] w-full flex items-center justify-center bg-muted/20">
+        <p className="text-muted-foreground">Loading chart...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-4 px-4 h-[400px]">
+      {chartData && chartData.length > 0 ? (
+        <ReactApexChart
+          options={chartOptions}
+          series={formatXAxisLabels()}
+          type="area"
+          height={350}
+        />
+      ) : (
+        <div className="h-[350px] w-full flex items-center justify-center">
+          <p className="text-muted-foreground">No data available for the selected period</p>
+        </div>
+      )}
+    </div>
+  );
+}
