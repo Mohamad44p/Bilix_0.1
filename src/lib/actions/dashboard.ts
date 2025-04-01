@@ -293,7 +293,7 @@ export async function getRevenueOverview(
   });
 
   // Process data based on type
-  const chartData: any = [];
+  const chartData: { name: string; data: { x: string; y: number }[] }[] = [];
 
   // This is simplified - you would need to aggregate by time periods
   // based on the timeframe selected

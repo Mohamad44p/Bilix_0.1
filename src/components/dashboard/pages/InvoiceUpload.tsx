@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable jsx-a11y/alt-text */
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect } from "react";
 import {
   Upload,
   Check,
@@ -64,7 +64,12 @@ const InvoiceUpload = () => {
   const [isPending, startTransition] = useTransition();
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [ocrResults, setOcrResults] = useState<{
-    [key: string]: OCRResult & { vendorSuggestions: string[] };
+    [key: string]: OCRResult & { 
+      vendorSuggestions: string[];
+      confidence?: number;
+      processingTime?: number;
+      extractionQuality?: 'high' | 'medium' | 'low';
+    };
   }>({});
   const [categories, setCategories] = useState<Category[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -235,6 +240,9 @@ const InvoiceUpload = () => {
     
     startTransition(async () => {
       try {
+        // Track start time for processing
+        const startTime = Date.now();
+        
         // Upload the invoice
         const invoice = await uploadInvoice(formData);
         
@@ -253,6 +261,13 @@ const InvoiceUpload = () => {
         // Process with OCR
         const result = await processInvoiceOCR(invoice.id, invoice.originalFileUrl || '');
         
+        // Calculate processing time
+        const processingTime = Date.now() - startTime;
+        
+        // Determine extraction quality based on confidence
+        const extractionQuality = result.confidence >= 0.8 ? 'high' : 
+                                  result.confidence >= 0.6 ? 'medium' : 'low';
+        
         // Update status to completed
         setUploadedFiles(prev => prev.map(f => 
           f.id === invoice.id 
@@ -260,10 +275,20 @@ const InvoiceUpload = () => {
             : f
         ));
         
-        // Store OCR results
+        // Store OCR results with additional metadata
         setOcrResults(prev => ({
           ...prev,
-          [invoice.id]: result
+          [invoice.id]: {
+            ...result,
+            extractedData: {
+              ...result.extractedData,
+              amount: typeof result.extractedData.amount === 'string' 
+                ? parseFloat(result.extractedData.amount) 
+                : result.extractedData.amount
+            },
+            processingTime,
+            extractionQuality
+          }
         }));
         
         // Select the invoice to show OCR results
@@ -311,8 +336,18 @@ const InvoiceUpload = () => {
     
     startTransition(async () => {
       try {
+        // Track start time for processing
+        const startTime = Date.now();
+        
         // Process with OCR
         const result = await processInvoiceOCR(invoiceId, fileUrl);
+        
+        // Calculate processing time
+        const processingTime = Date.now() - startTime;
+        
+        // Determine extraction quality based on confidence
+        const extractionQuality = result.confidence >= 0.8 ? 'high' : 
+                                  result.confidence >= 0.6 ? 'medium' : 'low';
         
         // Update status to completed
         setUploadedFiles(prev => prev.map(f => 
@@ -321,10 +356,20 @@ const InvoiceUpload = () => {
             : f
         ));
         
-        // Store OCR results
+        // Store OCR results with additional metadata
         setOcrResults(prev => ({
           ...prev,
-          [invoiceId]: result
+          [invoiceId]: {
+            ...result,
+            extractedData: {
+              ...result.extractedData,
+              amount: typeof result.extractedData.amount === 'string' 
+                ? parseFloat(result.extractedData.amount) 
+                : result.extractedData.amount
+            },
+            processingTime,
+            extractionQuality
+          }
         }));
         
         // Select the invoice to show OCR results
@@ -378,7 +423,7 @@ const InvoiceUpload = () => {
   };
 
   // Get status badge for a file
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, confidence?: number) => {
     switch (status) {
       case 'uploading':
         return (
@@ -399,11 +444,27 @@ const InvoiceUpload = () => {
           </Badge>
         );
       case 'completed':
+        let confidenceColor = "bg-green-100 text-green-800 hover:bg-green-100 border-green-200";
+        let confidenceIcon = <Check className="h-3 w-3" />;
+        
+        if (confidence !== undefined) {
+          if (confidence < 0.6) {
+            confidenceColor = "bg-red-100 text-red-800 hover:bg-red-100 border-red-200";
+            confidenceIcon = <AlertTriangle className="h-3 w-3" />;
+          } else if (confidence < 0.8) {
+            confidenceColor = "bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200";
+            confidenceIcon = <AlertTriangle className="h-3 w-3" />;
+          }
+        }
+        
         return (
-          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200">
+          <Badge className={confidenceColor}>
             <div className="flex items-center gap-1">
-              <Check className="h-3 w-3" />
+              {confidenceIcon}
               <span>Completed</span>
+              {confidence !== undefined && (
+                <span className="ml-1 text-xs">({Math.round(confidence * 100)}%)</span>
+              )}
             </div>
           </Badge>
         );
@@ -500,8 +561,6 @@ const InvoiceUpload = () => {
     
     try {
       // Simulate finding invoices in email
-      const totalSteps = 10;
-      
       // Step 1: Connect to mailbox
       setEmailSyncProgress(10);
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -781,8 +840,18 @@ const InvoiceUpload = () => {
           progress: baseProgress + (progressPerFile * 0.6), // 60% for OCR
         }));
         
+        // Track start time for processing
+        const startTime = Date.now();
+        
         // Process with OCR
         const result = await processInvoiceOCR(invoice.id, invoice.originalFileUrl || '');
+        
+        // Calculate processing time
+        const processingTime = Date.now() - startTime;
+        
+        // Determine extraction quality
+        const extractionQuality = result.confidence >= 0.8 ? 'high' : 
+                                  result.confidence >= 0.6 ? 'medium' : 'low';
         
         // Update file status to completed
         setUploadedFiles(prev => prev.map(f => 
@@ -791,10 +860,20 @@ const InvoiceUpload = () => {
             : f
         ));
         
-        // Store OCR results
+        // Store OCR results with additional metadata
         setOcrResults(prev => ({
           ...prev,
-          [invoice.id]: result
+          [invoice.id]: {
+            ...result,
+            extractedData: {
+              ...result.extractedData,
+              amount: typeof result.extractedData.amount === 'string' 
+                ? parseFloat(result.extractedData.amount) 
+                : result.extractedData.amount
+            },
+            processingTime,
+            extractionQuality
+          }
         }));
         
         // Update bulk progress and processed count
@@ -977,7 +1056,10 @@ const InvoiceUpload = () => {
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  {getStatusBadge(file.status)}
+                                  {getStatusBadge(
+                                    file.status, 
+                                    file.status === 'completed' && ocrResults[file.id] ? ocrResults[file.id].confidence : undefined
+                                  )}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {file.status === 'completed' && (
