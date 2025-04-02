@@ -55,6 +55,8 @@ export function ExportModal({
   const [isCreatingNewFolder, setIsCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [existingFolders, setExistingFolders] = useState<string[]>([]);
+  const [folderCreated, setFolderCreated] = useState(false);
+  const [folderCreationMessage, setFolderCreationMessage] = useState("");
   
   // Fetch existing export folders when modal opens
   useEffect(() => {
@@ -95,8 +97,17 @@ export function ExportModal({
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
-      setFolderName(newFolderName.trim());
+      const folderNameTrimmed = newFolderName.trim();
+      setFolderName(folderNameTrimmed);
       setIsCreatingNewFolder(false);
+      setFolderCreated(true);
+      setFolderCreationMessage(`Folder "${folderNameTrimmed}" created`);
+      
+      // Clear the success message after 3 seconds
+      setTimeout(() => {
+        setFolderCreated(false);
+        setFolderCreationMessage("");
+      }, 3000);
     }
   };
 
@@ -104,13 +115,24 @@ export function ExportModal({
     setIsExporting(true);
     
     try {
+      // Determine the folder name to use
+      let finalFolderName: string | undefined = undefined;
+      
+      if (folderName && folderName !== 'none') {
+        finalFolderName = folderName;
+      } else if (isCreatingNewFolder && newFolderName.trim()) {
+        finalFolderName = newFolderName.trim();
+      }
+      
+      console.log('Exporting with folder name:', finalFolderName);
+      
       const options: ExportOptions = {
         format: exportFormat,
         fields: selectedFields,
         includeAll: includeAllInvoices,
         dateFrom: dateRange.from?.toISOString().split('T')[0],
         dateTo: dateRange.to?.toISOString().split('T')[0],
-        folderName: folderName === 'none' ? undefined : folderName || undefined
+        folderName: finalFolderName
       };
       
       await onExport(options);
@@ -138,6 +160,12 @@ export function ExportModal({
               <FolderPlus className="h-4 w-4 text-muted-foreground" />
               Export to Folder
             </Label>
+            {folderCreated && (
+              <div className="bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-sm py-1.5 px-3 rounded-md mb-2 flex items-center">
+                <CheckCircle className="h-4 w-4 mr-2" />
+                {folderCreationMessage}
+              </div>
+            )}
             <div className="grid gap-2">
               {!isCreatingNewFolder ? (
                 <Select 
@@ -199,14 +227,20 @@ export function ExportModal({
                     <File className="h-4 w-4" />
                     Excel
                   </TabsTrigger>
-                  <TabsTrigger value="pdf" className="flex items-center gap-2" disabled>
+                  <TabsTrigger value="pdf" className="flex items-center gap-2">
                     <Download className="h-4 w-4" />
-                    PDF (Coming soon)
+                    PDF Report
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
           </div>
+          
+          {exportFormat === 'pdf' && (
+            <div className="mt-2 text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/30 p-2 rounded-md">
+              <p>We'll generate an HTML report that will open in a new tab. You can then use your browser's print function (Ctrl+P or ⌘+P) to save it as a PDF.</p>
+            </div>
+          )}
           
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5">
@@ -341,7 +375,7 @@ export function ExportModal({
         </div>
         
         <DialogFooter className="border-t mt-2 pt-4 flex flex-col sm:flex-row gap-2">
-          <div className="flex-1 text-sm text-muted-foreground flex gap-2 items-center">
+          <div className="flex-1 text-sm text-muted-foreground flex gap-2 items-center flex-wrap">
             {selectedFields.length > 0 && (
               <>
                 <div className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs font-medium">
@@ -350,11 +384,17 @@ export function ExportModal({
                 <span>•</span>
               </>
             )}
-            <span>{folderName ? `Folder: ${folderName}` : 'No folder'}</span>
+            <span>{folderName && folderName !== 'none' ? `Folder: ${folderName}` : 'No folder'}</span>
             {includeAllInvoices && (
               <>
                 <span>•</span>
                 <span>All invoices</span>
+              </>
+            )}
+            {exportFormat === 'pdf' && (
+              <>
+                <span>•</span>
+                <span className="text-blue-600 dark:text-blue-400">PDF Report</span>
               </>
             )}
           </div>
@@ -381,7 +421,7 @@ export function ExportModal({
               ) : (
                 <>
                   <Download className="h-4 w-4" />
-                  Export {exportFormat === 'excel' ? 'Spreadsheet' : 'PDF'}
+                  Export {exportFormat === 'excel' ? 'Spreadsheet' : 'PDF Report'}
                 </>
               )}
             </Button>

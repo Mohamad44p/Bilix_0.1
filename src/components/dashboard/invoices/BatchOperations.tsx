@@ -12,6 +12,9 @@ import {
 } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { TagsInput } from "@/components/dashboard/invoices/TagsInput";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 interface BatchOperationsProps {
   selectedCount: number;
@@ -41,6 +44,9 @@ export function BatchOperations({
   const [currentOperation, setCurrentOperation] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isTagMode, setIsTagMode] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [exportFormat, setExportFormat] = useState<"excel" | "pdf">("excel");
 
   // Handle direct export button click
   const handleExportClick = () => {
@@ -48,7 +54,7 @@ export function BatchOperations({
   };
 
   // Handle export with options
-  const handleExport = async (options: ExportOptions) => {
+  const handleExport = async () => {
     try {
       setCurrentOperation("export");
       setProgress(10);
@@ -62,10 +68,17 @@ export function BatchOperations({
           }
           return prev + 10;
         });
-      }, 500);
+      }, 300);
       
-      // Use the onBatchExport callback for actual export
-      await onBatchExport(options);
+      console.log('Quick export triggered with default options');
+      
+      // Use default export options if none provided
+      await onBatchExport({
+        format: exportFormat,
+        fields: ["invoiceNumber", "vendorName", "amount", "currency", "status", "issueDate", "dueDate", "category", "tags", "notes"],
+        includeAll: false,
+        folderName: undefined, // No folder for quick export
+      });
       
       clearInterval(progressInterval);
       setProgress(100);
@@ -193,48 +206,15 @@ export function BatchOperations({
   };
   
   // Handle tag operation with progress tracking
-  const handleTagSubmit = async () => {
-    if (!tagInput.trim()) return;
-    
-    const tags = tagInput
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-    
-    if (tags.length === 0) return;
-    
+  const handleTagAdd = async () => {
     try {
-      setCurrentOperation("tag");
-      setProgress(10);
-      
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return prev;
-          }
-          return prev + 10;
-        });
-      }, 300);
+      if (tags.length === 0) return;
       
       await onBatchTag(tags);
-      
-      clearInterval(progressInterval);
-      setProgress(100);
-      setSuccessMessage(`Successfully tagged ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}`);
-      
-      // Clear input and success message after a delay
-      setTagInput("");
-      setTimeout(() => {
-        setCurrentOperation(null);
-        setProgress(0);
-        setSuccessMessage(null);
-      }, 3000);
+      setIsTagMode(false);
+      setTags([]);
     } catch (error) {
-      console.error("Tagging failed:", error);
-      setCurrentOperation(null);
-      setProgress(0);
+      console.error("Failed to add tags:", error);
     }
   };
 
@@ -255,18 +235,23 @@ export function BatchOperations({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => window.location.reload()}
-            className="text-xs"
+            onClick={() => {
+              // Clear selection by passing empty array to onBatchTag
+              onBatchTag([]);
+            }}
+            disabled={isLoading || !!currentOperation}
           >
             <X className="h-4 w-4 mr-1" /> Clear selection
           </Button>
         </div>
 
         {hasError && (
-          <div className="bg-red-100 text-red-800 p-2 rounded text-sm flex items-center space-x-2">
-            <AlertCircle className="h-4 w-4" />
-            <span>{errorMessage}</span>
-          </div>
+          <Alert variant="destructive" className="mt-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {errorMessage || "An error occurred during the batch operation"}
+            </AlertDescription>
+          </Alert>
         )}
         
         {successMessage && (
@@ -346,70 +331,49 @@ export function BatchOperations({
             )}
           </Button>
           
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
+          {isTagMode ? (
+            <div className="flex items-center gap-2">
+              <TagsInput 
+                placeholder="Add tags..."
+                value={tags}
+                onChange={setTags}
+                max={5}
+                disabled={isLoading || !!currentOperation}
+              />
+              <Button 
                 size="sm"
+                onClick={handleTagAdd}
+                disabled={tags.length === 0 || isLoading || !!currentOperation}
+              >
+                Apply
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => {
+                  setIsTagMode(false);
+                  setTags([]);
+                }}
                 disabled={isLoading || !!currentOperation}
               >
-                {currentOperation === "tag" ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Tag className="h-4 w-4 mr-2" />
-                )}
-                Add Tags
-                {selectedCount > 10 && (
-                  <Badge variant="secondary" className="ml-1 text-xs">
-                    {selectedCount}
-                  </Badge>
-                )}
+                Cancel
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80">
-              <div className="space-y-4">
-                <h4 className="font-medium">Add Tags to Invoices</h4>
-                <p className="text-sm text-muted-foreground">
-                  Enter tags separated by commas
-                </p>
-                <div className="flex items-center space-x-2">
-                  <Input
-                    placeholder="e.g., important, tax, reviewed"
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleTagSubmit();
-                      }
-                    }}
-                  />
-                  <Button
-                    onClick={handleTagSubmit}
-                    disabled={!tagInput.trim() || isLoading || !!currentOperation}
-                  >
-                    Add
-                  </Button>
-                </div>
-                
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {["important", "tax", "2023", "receipt", "expense"].map(tag => (
-                    <Badge 
-                      key={tag}
-                      variant="outline" 
-                      className="cursor-pointer"
-                      onClick={() => {
-                        if (tagInput.includes(tag)) return;
-                        const newInput = tagInput ? `${tagInput}, ${tag}` : tag;
-                        setTagInput(newInput);
-                      }}
-                    >
-                      + {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsTagMode(true)}
+              disabled={isLoading || !!currentOperation}
+            >
+              <Tag className="h-4 w-4 mr-2" /> Add Tags
+              {selectedCount > 10 && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {selectedCount}
+                </Badge>
+              )}
+            </Button>
+          )}
           
           <Button
             variant="destructive"
@@ -430,7 +394,64 @@ export function BatchOperations({
       <ExportModal
         open={showExportModal}
         onClose={() => setShowExportModal(false)}
-        onExport={handleExport}
+        onExport={(options) => {
+          setShowExportModal(false);
+          setCurrentOperation("export");
+          setProgress(10);
+          
+          // Log export options for debugging
+          console.log('Export from modal with options:', JSON.stringify(options));
+          
+          // Show export type in the progress message
+          const exportTypeMessage = options.format === 'pdf' ? 'PDF report' : 'Excel spreadsheet';
+          const folderMessage = options.folderName ? ` to folder "${options.folderName}"` : '';
+
+          if (options.format === 'pdf') {
+            setSuccessMessage(`Preparing ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''} as ${exportTypeMessage}${folderMessage}...`);
+          } else {
+            setSuccessMessage(`Exporting ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''} as ${exportTypeMessage}${folderMessage}...`);
+          }
+          
+          // Simulate progress updates
+          const progressInterval = setInterval(() => {
+            setProgress(prev => {
+              if (prev >= 90) {
+                clearInterval(progressInterval);
+                return prev;
+              }
+              return prev + 10;
+            });
+          }, 300);
+          
+          onBatchExport(options)
+            .then(() => {
+              clearInterval(progressInterval);
+              setProgress(100);
+              // Update success message to indicate completion
+              if (options.format === 'pdf') {
+                setSuccessMessage(
+                  `PDF report created from ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''}${folderMessage}. Opening in new tab.`
+                );
+              } else {
+                setSuccessMessage(
+                  `Successfully exported ${selectedCount} invoice${selectedCount !== 1 ? 's' : ''} as ${exportTypeMessage}${folderMessage}`
+                );
+              }
+              
+              // Clear success message after a delay
+              setTimeout(() => {
+                setCurrentOperation(null);
+                setProgress(0);
+                setSuccessMessage(null);
+              }, 3000);
+            })
+            .catch((error) => {
+              console.error("Export failed:", error);
+              clearInterval(progressInterval);
+              setCurrentOperation(null);
+              setProgress(0);
+            });
+        }}
         selectedCount={selectedCount}
       />
     </div>

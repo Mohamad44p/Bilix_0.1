@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Check,
   Clock,
@@ -42,6 +42,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { EditInvoiceModal } from "@/components/dashboard/invoices/EditInvoiceModal";
 
 interface InvoiceTableProps {
   invoices: Invoice[];
@@ -62,6 +63,7 @@ export function InvoiceTable({
 }: InvoiceTableProps) {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
   const [processing, setProcessing] = useState<{[key: string]: boolean}>({});
   const { toast } = useToast();
   
@@ -71,19 +73,33 @@ export function InvoiceTable({
     setProcessing(prev => ({ ...prev, [invoice.id]: true }));
     
     try {
-      await invoiceService.updateInvoice(invoice.id, { status: newStatus as InvoiceStatus });
+      // Normalize the status string to ensure consistent format
+      const normalizedStatus = newStatus.toLowerCase();
+      
+      console.log(`Attempting to update invoice ${invoice.id} status from ${invoice.status} to ${normalizedStatus}`);
+      
+      // Only send the status field to avoid issues with missing fields
+      await invoiceService.updateInvoice(invoice.id, { 
+        status: normalizedStatus as InvoiceStatus 
+      });
       
       toast({
         title: "Status updated",
-        description: `Invoice ${invoice.invoiceNumber || invoice.id} status changed to ${newStatus}`,
+        description: `Invoice ${invoice.invoiceNumber || invoice.id} status changed to ${normalizedStatus}`,
       });
       
       onRefresh();
     } catch (error) {
       console.error("Failed to update status:", error);
+      
+      // Show detailed error message if available
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : "Failed to update invoice status";
+        
       toast({
         title: "Update failed",
-        description: "Failed to update invoice status",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -189,6 +205,34 @@ export function InvoiceTable({
         );
     }
   };
+
+  // Handle edit invoice action
+  const handleEdit = useCallback((invoice: Invoice) => {
+    console.log("Editing invoice:", invoice.id);
+    setEditInvoice(invoice);
+  }, []);
+  
+  // Handle archive invoice action - uses the status change method
+  const handleArchive = useCallback(async (invoice: Invoice) => {
+    // Archive is implemented as a status change to 'cancelled'
+    try {
+      await handleStatusChange(invoice, 'cancelled');
+      
+      // Show a specific message for archive
+      toast({
+        title: "Invoice archived",
+        description: `Invoice ${invoice.invoiceNumber || invoice.id} has been archived`,
+      });
+      onRefresh();
+    } catch (error) {
+      console.error("Archive failed:", error);
+      toast({
+        title: "Archive failed",
+        description: error instanceof Error ? error.message : "Failed to archive invoice",
+        variant: "destructive",
+      });
+    }
+  }, [handleStatusChange, toast, onRefresh]);
 
   // Render loading state
   if (loading && invoices.length === 0) {
@@ -408,12 +452,24 @@ export function InvoiceTable({
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
-                        <Button variant="ghost" size="sm" className="w-full justify-start px-2" onClick={() => {/* Add Edit Handler */}}>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="w-full justify-start px-2" 
+                          onClick={() => handleEdit(invoice)}
+                          disabled={processing[invoice.id]}
+                        >
                           <Edit className="mr-2 h-4 w-4" /> Edit
                         </Button>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Button variant="ghost" size="sm" className="w-full justify-start px-2" onClick={() => handleStatusChange(invoice, 'archived')}>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="w-full justify-start px-2" 
+                          onClick={() => handleArchive(invoice)}
+                          disabled={processing[invoice.id]}
+                        >
                           <Archive className="mr-2 h-4 w-4" /> Archive
                         </Button>
                       </DropdownMenuItem>
@@ -445,6 +501,57 @@ export function InvoiceTable({
                   From {previewInvoice.vendor?.name || "Unknown Vendor"} • Issued {formatDate(previewInvoice.issueDate || new Date())}
                 </DialogDescription>
               </DialogHeader>
+
+              {/* Document Preview */}
+              {previewInvoice.originalFileUrl && (
+                <div className="my-4 border rounded-md overflow-hidden">
+                  {previewInvoice.originalFileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                    // Image preview
+                    <div className="w-full h-[300px] flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                      <img 
+                        src={previewInvoice.originalFileUrl} 
+                        alt="Invoice document" 
+                        className="max-w-full max-h-full object-contain"
+                        onError={(e) => {
+                          e.currentTarget.src = "/images/placeholder-document.svg";
+                          console.error("Failed to load image:", previewInvoice.originalFileUrl);
+                        }}
+                      />
+                    </div>
+                  ) : previewInvoice.originalFileUrl.match(/\.(pdf)$/i) ? (
+                    // PDF preview - embed if browser supports
+                    <div className="w-full h-[400px]">
+                      <object
+                        data={previewInvoice.originalFileUrl}
+                        type="application/pdf"
+                        width="100%"
+                        height="100%"
+                        className="w-full h-full"
+                      >
+                        <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+                          <div className="text-center">
+                            <p className="mb-2">PDF preview not available</p>
+                            <Button variant="outline" size="sm" onClick={() => handleDownload(previewInvoice)}>
+                              <Download className="mr-2 h-4 w-4" /> Download PDF
+                            </Button>
+                          </div>
+                        </div>
+                      </object>
+                    </div>
+                  ) : (
+                    // Generic file preview (non-image, non-PDF)
+                    <div className="w-full py-8 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                      <div className="text-center">
+                        <Receipt className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="mb-4">Preview not available for this file type</p>
+                        <Button variant="outline" onClick={() => handleDownload(previewInvoice)}>
+                          <Download className="mr-2 h-4 w-4" /> Download File
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <Card>
@@ -646,6 +753,28 @@ export function InvoiceTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Invoice Edit Modal */}
+      <EditInvoiceModal
+        invoice={editInvoice}
+        open={!!editInvoice}
+        onClose={() => setEditInvoice(null)}
+        onSave={() => {
+          onRefresh();
+          setEditInvoice(null);
+        }}
+        availableCategories={[
+          'Office Supplies',
+          'Software',
+          'Hardware',
+          'Utilities',
+          'Travel',
+          'Marketing',
+          'Consulting',
+          'Legal',
+          'Accounting'
+        ]} 
+      />
     </div>
   );
 } 

@@ -50,6 +50,7 @@ import OCRResultsPanel from "../invoice/OCRResultsPanel";
 import { OCRResult, Category, Vendor } from "@/lib/types";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useRouter } from "next/navigation";
 
 const InvoiceUpload = () => {
   const [dragging, setDragging] = useState(false);
@@ -75,6 +76,7 @@ const InvoiceUpload = () => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   
   const { toast } = useToast();
+  const router = useRouter();
 
   // Email integration states
   const [emailProvider, setEmailProvider] = useState("gmail");
@@ -132,11 +134,31 @@ const InvoiceUpload = () => {
       try {
         const [categoriesData, vendorsData] = await Promise.all([
           getUserCategories(),
-          getUserVendors()
+          getUserVendors(),
         ]);
         
-        setCategories(categoriesData);
-        setVendors(vendorsData);
+        // Transform data to match the expected types
+        const transformedCategories: Category[] = categoriesData.map((cat) => ({
+          id: cat.id,
+          name: cat.name,
+          description: cat.description || undefined,
+          color: cat.color || undefined,
+          icon: cat.icon || undefined
+        }));
+        
+        const transformedVendors: Vendor[] = vendorsData.map((vendor) => ({
+          id: vendor.id,
+          name: vendor.name,
+          email: vendor.email || undefined,
+          phone: vendor.phone || undefined,
+          website: vendor.website || undefined,
+          address: vendor.address || undefined,
+          notes: vendor.notes || undefined,
+          logoUrl: vendor.logoUrl || undefined
+        }));
+        
+        setCategories(transformedCategories);
+        setVendors(transformedVendors);
       } catch (error) {
         console.error("Error loading data:", error);
       }
@@ -402,11 +424,31 @@ const InvoiceUpload = () => {
     try {
       const [categoriesData, vendorsData] = await Promise.all([
         getUserCategories(),
-        getUserVendors()
+        getUserVendors(),
       ]);
+
+      // Transform data to match the expected types
+      const transformedCategories: Category[] = categoriesData.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        description: cat.description || undefined,
+        color: cat.color || undefined,
+        icon: cat.icon || undefined
+      }));
       
-      setCategories(categoriesData);
-      setVendors(vendorsData);
+      const transformedVendors: Vendor[] = vendorsData.map((vendor) => ({
+        id: vendor.id,
+        name: vendor.name,
+        email: vendor.email || undefined,
+        phone: vendor.phone || undefined,
+        website: vendor.website || undefined,
+        address: vendor.address || undefined,
+        notes: vendor.notes || undefined,
+        logoUrl: vendor.logoUrl || undefined
+      }));
+      
+      setCategories(transformedCategories);
+      setVendors(transformedVendors);
       
       toast({
         title: "Data refreshed",
@@ -913,6 +955,11 @@ const InvoiceUpload = () => {
       title: "Bulk upload complete",
       description: `Successfully processed ${bulkUpload.processedFiles} of ${bulkUpload.totalFiles} files.`,
     });
+  };
+
+  // Navigate to AI Settings
+  const navigateToAISettings = () => {
+    router.push("/dashboard/settings/ai");
   };
 
   return (
@@ -1741,7 +1788,7 @@ const InvoiceUpload = () => {
               </div>
             </CardContent>
             <CardFooter className="p-4 pt-0 mt-auto">
-              <Button className="w-full">
+              <Button className="w-full" onClick={navigateToAISettings}>
                 <Sparkles className="mr-2 h-4 w-4" />
                 Configure AI Settings
               </Button>

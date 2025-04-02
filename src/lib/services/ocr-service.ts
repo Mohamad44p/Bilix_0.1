@@ -13,7 +13,8 @@ interface ExtractedInvoiceData {
   notes?: string;
   language?: string;
   confidence?: number;
-  [key: string]: unknown; // Replace any with unknown for custom fields
+  invoiceType?: 'PURCHASE' | 'PAYMENT'; // Add invoice type detection
+  [key: string]: string | number | boolean | undefined | null | InvoiceLineItem[] | Date; // Custom fields
 }
 
 interface InvoiceLineItem {
@@ -21,6 +22,11 @@ interface InvoiceLineItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  taxRate?: number;
+  taxAmount?: number;
+  discount?: number;
+  productSku?: string;
+  notes?: string;
 }
 
 // Default fields to extract from invoices
@@ -41,7 +47,19 @@ const defaultFields: InvoiceFieldConfig[] = [
  */
 export async function processInvoiceWithOCR(
   fileUrl: string,
-  customFields?: InvoiceFieldConfig[]
+  customFields?: InvoiceFieldConfig[],
+  organizationData?: {
+    name?: string;
+    industry?: string;
+    size?: string;
+    invoiceVolume?: string;
+  },
+  aiSettings?: {
+    customInstructions?: string;
+    confidenceThreshold?: number;
+    preferredCategories?: string[];
+    sampleInvoiceUrls?: string[];
+  }
 ) {
   const fieldsToExtract = customFields || defaultFields;
   
@@ -50,17 +68,19 @@ export async function processInvoiceWithOCR(
   
   // Try OpenAI Vision API first (the most capable but potentially more expensive)
   try {
-    const result = await processWithOpenAI(fileUrl, fieldsToExtract, fileType);
+    const result = await processWithOpenAI(fileUrl, fieldsToExtract, fileType, organizationData, aiSettings);
     
     // Post-process the results to improve accuracy
-    const enhancedData = postProcessExtractionResults(result.extractedData);
+    const enhancedData = postProcessExtractionResults(result.extractedData, organizationData);
     
     // If successful, get vendor suggestions and return results
-    const suggestedCategories = await suggestCategories(enhancedData);
+    const suggestedCategories = await suggestCategories(enhancedData, aiSettings?.preferredCategories || []);
+    const vendorSuggestions = await suggestVendors(enhancedData.vendorName || '', []);
     
     return {
       extractedData: enhancedData,
       suggestedCategories,
+      vendorSuggestions,
       engine: 'openai',
       confidence: result.confidence || 0.9
     };
@@ -72,24 +92,28 @@ export async function processInvoiceWithOCR(
       // If available, use Azure OCR or Google Document AI
       if (process.env.USE_AZURE_OCR === 'true') {
         const azureResult = await processWithAzureOCR(fileUrl);
-        const enhancedData = postProcessExtractionResults(azureResult.extractedData);
-        const suggestedCategories = await suggestCategories(enhancedData);
+        const enhancedData = postProcessExtractionResults(azureResult.extractedData, organizationData);
+        const suggestedCategories = await suggestCategories(enhancedData, aiSettings?.preferredCategories || []);
+        const vendorSuggestions = await suggestVendors(enhancedData.vendorName || '', []);
         
         return {
           extractedData: enhancedData,
           suggestedCategories,
+          vendorSuggestions,
           engine: 'azure',
           confidence: azureResult.confidence || 0.8
         };
       } else {
         // Fallback to simulated OCR (in production, integrate another service)
         const fallbackResult = await simulateFallbackOCR(fileUrl);
-        const enhancedData = postProcessExtractionResults(fallbackResult.extractedData);
-        const suggestedCategories = await suggestCategories(enhancedData);
+        const enhancedData = postProcessExtractionResults(fallbackResult.extractedData, organizationData);
+        const suggestedCategories = await suggestCategories(enhancedData, aiSettings?.preferredCategories || []);
+        const vendorSuggestions = await suggestVendors(enhancedData.vendorName || '', []);
         
         return {
           extractedData: enhancedData,
           suggestedCategories,
+          vendorSuggestions,
           engine: 'fallback',
           confidence: fallbackResult.confidence || 0.7
         };
@@ -121,7 +145,12 @@ function getFileTypeFromUrl(fileUrl: string): 'pdf' | 'image' | 'spreadsheet' | 
 /**
  * Post-process extracted data to improve quality and consistency
  */
-function postProcessExtractionResults(data: ExtractedInvoiceData): ExtractedInvoiceData {
+function postProcessExtractionResults(data: ExtractedInvoiceData, organizationData?: {
+  name?: string;
+  industry?: string;
+  size?: string;
+  invoiceVolume?: string;
+}): ExtractedInvoiceData {
   const enhanced = { ...data };
   
   // Clean up invoice number (remove spaces, normalize format)
@@ -157,13 +186,187 @@ function postProcessExtractionResults(data: ExtractedInvoiceData): ExtractedInvo
     }
   }
   
+  // Better invoice type determination with organization context
+  if (organizationData?.name && organizationData.name.trim() !== '') {
+    // Create variations of the organization name to check
+    const orgName = organizationData.name.toLowerCase();
+    const orgWords = orgName.split(/\s+/).filter(word => word.length > 2);
+    
+    // Get all text content to analyze
+    let allText = '';
+    
+    // Combine all textual information from the invoice
+    if (enhanced.notes) allText += ' ' + enhanced.notes.toLowerCase();
+    if (enhanced.vendorName) allText += ' ' + enhanced.vendorName.toLowerCase();
+    if (enhanced.items && Array.isArray(enhanced.items)) {
+      enhanced.items.forEach(item => {
+        if (item.description) allText += ' ' + item.description.toLowerCase();
+      });
+    }
+    
+    // Look for organization name in various sections of the document
+    let orgNameFoundInText = false;
+    
+    // Check if organization name directly appears in text
+    if (allText.includes(orgName)) {
+      orgNameFoundInText = true;
+    } else {
+      // Try with individual words (for multi-word company names)
+      const matchingOrgWords = orgWords.filter(word => allText.includes(word));
+      if (matchingOrgWords.length >= Math.ceil(orgWords.length * 0.6)) {
+        orgNameFoundInText = true;
+      }
+    }
+    
+    // Purchase indicators (organization is paying)
+    const purchaseIndicators = [
+      'bill to ' + orgName,
+      'bill to:' + orgName,
+      'billed to' + orgName,
+      'client:' + orgName,
+      'customer:' + orgName,
+      'ship to:' + orgName,
+      'ship to ' + orgName,
+      'ship to:' + orgName,
+      'ship to address',
+      'billing address',
+      'client address',
+      'customer name',
+      'customer id',
+      'customer no',
+      'customer no.',
+      'customer no:',
+      'account number',
+      'account no',
+      'account no.',
+      'account no:',
+      'purchase order',
+      'po number',
+      'po no',
+      'po no.',
+      'po no:',
+      'payment due',
+      'payment terms',
+      'please pay',
+      'pay to',
+      'remit to'
+    ];
+    
+    // Payment indicators (organization is receiving payment)
+    const paymentIndicators = [
+      'from:' + orgName, 
+      'from: ' + orgName,
+      'from ' + orgName,
+      'issued by:' + orgName,
+      'issued by: ' + orgName, 
+      'issued by ' + orgName,
+      'seller:' + orgName, 
+      'seller: ' + orgName, 
+      'seller ' + orgName,
+      'vendor:' + orgName, 
+      'vendor: ' + orgName, 
+      'vendor ' + orgName,
+      'remit payment to',
+      'our reference',
+      'vat registration',
+      'tax id',
+      'fiscal code',
+      'business id',
+      'company reg',
+      'company registration',
+      'invoice issued by',
+      'invoice from',
+      'sender:',
+      'invoice sender',
+      'invoice generator'
+    ];
+    
+    // If org name is found, check for purchase vs payment indicators
+    if (orgNameFoundInText) {
+      // Count occurrences of purchase and payment indicators
+      let purchaseScore = 0;
+      let paymentScore = 0;
+      
+      // Clean text to search for patterns
+      const searchText = allText.replace(/\s+/g, ' ');
+      
+      // Check for each purchase indicator
+      for (const indicator of purchaseIndicators) {
+        if (searchText.includes(indicator.toLowerCase())) {
+          purchaseScore += 2;
+        }
+      }
+      
+      // Check for each payment indicator
+      for (const indicator of paymentIndicators) {
+        if (searchText.includes(indicator.toLowerCase())) {
+          paymentScore += 2;
+        }
+      }
+      
+      // Examine the "Bill To:" section more closely
+      const billToMatch = searchText.match(/bill\s*to[:\s]+(.*?)(?:ship\s*to|invoice|$)/i);
+      if (billToMatch && billToMatch[1]) {
+        const billToText = billToMatch[1].toLowerCase();
+        if (orgWords.some(word => billToText.includes(word))) {
+          purchaseScore += 5; // Strong indicator this is a purchase invoice
+        }
+      }
+      
+      // Examine the "From:" section more closely
+      const fromMatch = searchText.match(/from[:\s]+(.*?)(?:to[:\s]|invoice|$)/i);
+      if (fromMatch && fromMatch[1]) {
+        const fromText = fromMatch[1].toLowerCase();
+        if (orgWords.some(word => fromText.includes(word))) {
+          paymentScore += 5; // Strong indicator this is a payment invoice
+        }
+      }
+      
+      // Additional check: if document references vendor/seller that matches org name
+      if (enhanced.vendorName && 
+          (orgName.includes(enhanced.vendorName.toLowerCase()) || 
+          enhanced.vendorName.toLowerCase().includes(orgName))) {
+        paymentScore += 3; // This suggests org is the seller
+      }
+      
+      // Use the scores to determine invoice type
+      if (purchaseScore > paymentScore) {
+        enhanced.invoiceType = 'PURCHASE';
+        // Set confidence based on score difference
+        enhanced.confidence = Math.min(0.5 + (purchaseScore - paymentScore) * 0.05, 0.95);
+      } else if (paymentScore > purchaseScore) {
+        enhanced.invoiceType = 'PAYMENT';
+        // Set confidence based on score difference
+        enhanced.confidence = Math.min(0.5 + (paymentScore - purchaseScore) * 0.05, 0.95);
+      } else {
+        // If tied, default to PURCHASE with low confidence
+        enhanced.invoiceType = 'PURCHASE';
+        enhanced.confidence = 0.5;
+      }
+    } else {
+      // If we don't find the org name, default to PURCHASE with low confidence
+      enhanced.invoiceType = 'PURCHASE';
+      enhanced.confidence = 0.4;
+    }
+  }
+  
+  // Ensure invoice type is valid if not already set
+  if (!enhanced.invoiceType || !['PURCHASE', 'PAYMENT'].includes(enhanced.invoiceType)) {
+    // Default to PURCHASE if not specified or invalid
+    enhanced.invoiceType = 'PURCHASE';
+  }
+  
   // Ensure line items are properly formatted
   if (enhanced.items && Array.isArray(enhanced.items)) {
     enhanced.items = enhanced.items.map((item: Partial<InvoiceLineItem>) => ({
       description: item.description || '',
       quantity: typeof item.quantity === 'string' ? parseFloat(item.quantity) : (item.quantity || 1),
       unitPrice: typeof item.unitPrice === 'string' ? parseFloat(item.unitPrice as string) : (item.unitPrice || 0),
-      totalPrice: typeof item.totalPrice === 'string' ? parseFloat(item.totalPrice as string) : (item.totalPrice || 0)
+      totalPrice: typeof item.totalPrice === 'string' ? parseFloat(item.totalPrice as string) : (item.totalPrice || 0),
+      taxRate: typeof item.taxRate === 'string' ? parseFloat(item.taxRate as string) : item.taxRate,
+      taxAmount: typeof item.taxAmount === 'string' ? parseFloat(item.taxAmount as string) : item.taxAmount,
+      discount: typeof item.discount === 'string' ? parseFloat(item.discount as string) : item.discount,
+      productSku: item.productSku || undefined
     }));
   }
   
@@ -243,16 +446,55 @@ function normalizeCurrency(currency: string): string {
 async function processWithOpenAI(
   fileUrl: string,
   fieldsToExtract: InvoiceFieldConfig[],
-  fileType: 'pdf' | 'image' | 'spreadsheet' | 'unknown'
+  fileType: 'pdf' | 'image' | 'spreadsheet' | 'unknown',
+  organizationData?: {
+    name?: string;
+    industry?: string;
+    size?: string;
+    invoiceVolume?: string;
+  },
+  aiSettings?: {
+    customInstructions?: string;
+    confidenceThreshold?: number;
+    preferredCategories?: string[];
+    sampleInvoiceUrls?: string[];
+  }
 ) {
   const fieldsDescription = fieldsToExtract
     .map((field) => `${field.label} (${field.description})`)
     .join('\n');
 
+  // Build organization context string if data is provided
+  let organizationContext = '';
+  if (organizationData) {
+    organizationContext = `
+ORGANIZATION CONTEXT:
+- Organization Name: ${organizationData.name || 'Unknown'}
+- Industry: ${organizationData.industry || 'Unknown'}
+- Organization Size: ${organizationData.size || 'Unknown'}
+- Invoice Volume: ${organizationData.invoiceVolume || 'Unknown'}
+
+This information should help you determine whether this is a PURCHASE invoice (where the organization is the buyer and needs to pay) or a PAYMENT invoice (where the organization is the seller and will receive payment).
+    `;
+  }
+
+  // Build custom instructions if provided
+  let customInstructions = '';
+  if (aiSettings?.customInstructions) {
+    customInstructions = `
+CUSTOM PROCESSING INSTRUCTIONS:
+${aiSettings.customInstructions}
+    `;
+  }
+
   // Enhanced prompt with more detailed instructions for better extraction
   const prompt = `You are an expert invoice data extraction system. Extract the following information from this ${fileType}:
     
 ${fieldsDescription}
+
+${organizationContext}
+
+${customInstructions}
 
 DETAILED INSTRUCTIONS:
 1. LANGUAGE HANDLING:
@@ -269,7 +511,7 @@ DETAILED INSTRUCTIONS:
    - Extract the TOTAL amount (including taxes) as a numeric value only
    - Identify the currency symbol and provide the ISO code (USD, EUR, GBP, etc.)
    - Extract tax amounts separately
-   - For line items, capture: description, quantity, unit price, and total price
+   - For line items, capture: description, quantity, unit price, total price, tax rate, tax amount, discount, and product SKU if available
 
 4. VENDOR DETAILS:
    - Extract the full vendor/merchant name (company name)
@@ -281,17 +523,40 @@ DETAILED INSTRUCTIONS:
    - Extract the exact invoice identifier
    - Be careful not to confuse with other numbers like account numbers
 
-6. LINE ITEMS:
-   - Extract all individual products/services listed
-   - Include quantity, description, unit price, and total price for each
-   - Scan tables carefully for this information
+6. INVOICE TYPE DETECTION - VERY IMPORTANT:
+   - You MUST determine if this is a PURCHASE invoice (where ${organizationData?.name || 'the organization'} is the BUYER and needs to pay) 
+     or a PAYMENT invoice (where ${organizationData?.name || 'the organization'} is the SELLER and will receive payment)
+   
+   - Look for these key indicators:
+     * PURCHASE invoice hints (organization pays):
+       - "Bill To:" or "Ship To:" field shows ${organizationData?.name || 'the organization name'}
+       - The organization appears as a customer or recipient
+       - Terms like "Payment Due", "Due Date", "Please pay" indicate organization needs to pay
+       - The document has a "Customer" number referring to the organization
+     
+     * PAYMENT invoice hints (organization receives money):
+       - "From:" field shows ${organizationData?.name || 'the organization name'}
+       - Organization logo is prominently displayed in the letterhead
+       - Terms like "Invoice issued by", "Sold by", "Vendor:" show the organization as seller
+       - Organization's VAT/Tax ID is displayed as the seller
 
-7. ADVANCED RECOGNITION:
+   - Look for the organization name (${organizationData?.name || 'organization name'}) in different sections
+   - Analyze whether the invoice is formatted as something TO PAY or as a RECEIPT of payment already made
+   - Set invoiceType field to either "PURCHASE" or "PAYMENT" with high confidence
+
+7. LINE ITEMS:
+   - Extract ALL individual products/services listed in detail
+   - Include description, quantity, unit price, total price, tax rate, tax amount, discount, and product SKU (if available)
+   - Scan tables carefully for this information
+   - Preserve exact descriptions and quantities
+   - Convert all numeric values to numbers (not strings)
+
+8. ADVANCED RECOGNITION:
    - Handle handwritten text when possible
    - Be aware of watermarks and background patterns
    - For low-quality images, use context to make best guesses
 
-8. CONFIDENCE ASSESSMENT:
+9. CONFIDENCE ASSESSMENT:
    - Provide a confidence score (0-1) for each extracted field
    - If a field is not found or uncertain, mark it as null but explain why
    - For ambiguous fields, provide your best guess with a lower confidence score
@@ -304,12 +569,17 @@ OUTPUT FORMAT:
   "dueDate": "extracted date in YYYY-MM-DD format",
   "amount": numeric value only (e.g., 1234.56),
   "currency": "extracted currency code (e.g., USD, EUR)",
+  "invoiceType": "PURCHASE" or "PAYMENT",
   "items": [
     {
       "description": "line item description",
       "quantity": numeric value,
       "unitPrice": numeric value,
-      "totalPrice": numeric value
+      "totalPrice": numeric value,
+      "taxRate": optional numeric value,
+      "taxAmount": optional numeric value,
+      "discount": optional numeric value,
+      "productSku": "optional product code/SKU"
     }
   ],
   "tax": numeric value,
@@ -494,7 +764,7 @@ async function simulateFallbackOCR(
 /**
  * Suggest categories based on extracted invoice data
  */
-export async function suggestCategories(extractedData: ExtractedInvoiceData): Promise<string[]> {
+export async function suggestCategories(extractedData: ExtractedInvoiceData, preferredCategories: string[]): Promise<string[]> {
   // Implement more sophisticated category suggestions based on the invoice content
   const baseCategories = ['Office Supplies', 'Software', 'Hardware', 'Utilities', 'Rent', 'Travel', 'Meals', 'Marketing'];
   
@@ -549,8 +819,11 @@ export async function suggestCategories(extractedData: ExtractedInvoiceData): Pr
     }
   }
   
+  // Filter preferred categories
+  const filteredCategories = suggestedCategories.filter(category => preferredCategories.includes(category));
+  
   // Remove duplicates and limit to 8 suggestions
-  return [...new Set(suggestedCategories)].slice(0, 8);
+  return [...new Set(filteredCategories)].slice(0, 8);
 }
 
 /**

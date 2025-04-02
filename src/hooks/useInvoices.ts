@@ -89,10 +89,19 @@ export function useInvoices({
         naturalLanguageQuery: naturalLanguageQuery || undefined,
       };
       
+      // Only include the search parameter if not using natural language query
+      if (naturalLanguageQuery && params.search) {
+        params.search = undefined;
+      }
+      
+      // Log the query parameters for debugging
+      console.log('Fetching invoices with params:', params);
+      
       const { data, total } = await invoiceService.getInvoices(params);
       setInvoices(data);
       setTotal(total);
     } catch (err) {
+      console.error('Error fetching invoices:', err);
       setError(err instanceof Error ? err : new Error('An unknown error occurred'));
     } finally {
       setLoading(false);
@@ -180,10 +189,50 @@ export function useInvoices({
     }
   }, [invoices, selectedInvoiceIds.length]);
 
-  // Effect to fetch invoices on initial load and when dependencies change
+  // Enhance natural language processing for advanced queries
+  const processNaturalLanguageQuery = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    
+    console.log("Processing natural language query:", query);
+    setLoading(true);
+    
+    try {
+      // Examples of queries that can be handled:
+      // - "Show me invoices less than $1000"
+      // - "Find all overdue invoices from last month"
+      // - "Which vendors did I pay the most in December?"
+      // - "Invoices from Amazon over $500 this year"
+      
+      // The actual API call will handle the parsing and return appropriate results
+      const { data, total } = await invoiceService.getInvoices({
+        naturalLanguageQuery: query,
+        page,
+        limit,
+      });
+      
+      setInvoices(data);
+      setTotal(total);
+      
+      // When using AI search, we clear other filters to avoid confusion
+      // but don't update the UI state to maintain the filters for when switching back
+      console.log(`AI search returned ${data.length} results out of ${total} total matches`);
+      
+    } catch (error) {
+      console.error("Error processing natural language query:", error);
+      setError(error instanceof Error ? error : new Error('Failed to process natural language query'));
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit]);
+
+  // Update the effect to use the natural language processor when needed
   useEffect(() => {
-    fetchInvoices();
-  }, [fetchInvoices]);
+    if (naturalLanguageQuery) {
+      processNaturalLanguageQuery(naturalLanguageQuery);
+    } else {
+      fetchInvoices();
+    }
+  }, [naturalLanguageQuery, fetchInvoices, processNaturalLanguageQuery]);
 
   // Effect to fetch metadata on initial load
   useEffect(() => {
@@ -242,5 +291,8 @@ export function useInvoices({
     // Actions
     refresh: fetchInvoices,
     autoCategorizeInvoice,
+    
+    // Expose the new natural language processor
+    processNaturalLanguageQuery,
   };
 } 

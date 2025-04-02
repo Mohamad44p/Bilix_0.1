@@ -1,60 +1,87 @@
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELLED';
-export type InvoiceCategory = Category;
 
-export interface Invoice {
-  id: string;
-  invoiceNumber?: string | null;
-  title?: string | null;
-  vendorName?: string | null;
-  issueDate?: Date | null;
-  dueDate?: Date | null;
-  amount?: number | null;
-  totalAmount?: number | null; // Alias for amount for backward compatibility
-  taxAmount?: number | null;
-  description?: string | null;
-  currency?: string | null;
-  status: InvoiceStatus;
-  notes?: string | null;
-  tags?: string[];
-  categoryId?: string | null;
-  category?: Category | null;
-  vendorId?: string | null;
-  vendor?: Vendor | null;
-  originalFileUrl?: string | null;
-  thumbnailUrl?: string | null;
-  extractedData?: Record<string, unknown>;
-  languageCode?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-  organizationId?: string | null;
+export type InvoiceType = 'PURCHASE' | 'PAYMENT';
+
+export interface InvoiceLineItem {
+  id?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  taxRate?: number;
+  taxAmount?: number;
+  discount?: number;
+  productSku?: string;
+  notes?: string;
+  invoiceId?: string;
+}
+
+export interface AISettings {
+  id?: string;
+  customInstructions?: string;
+  confidenceThreshold: number;
+  preferredCategories: string[];
+  sampleInvoiceUrls: string[];
+  userId?: string;
+}
+
+export interface ExtractedInvoiceData {
+  invoiceNumber?: string;
+  vendorName?: string;
+  issueDate?: string;
+  dueDate?: string;
+  amount?: number;
+  currency?: string;
+  items?: InvoiceLineItem[];
+  tax?: number;
+  notes?: string;
+  language?: string;
+  confidence?: number;
+  invoiceType?: InvoiceType;
+  [key: string]: string | number | boolean | undefined | null | InvoiceLineItem[] | Date; // Custom fields with specific types
 }
 
 export interface Category {
   id: string;
   name: string;
-  description?: string | null;
-  color?: string | null;
-  icon?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-  organizationId?: string | null;
+  description?: string;
+  color?: string;
+  icon?: string;
 }
 
 export interface Vendor {
   id: string;
   name: string;
-  email?: string | null;
-  phone?: string | null;
-  website?: string | null;
-  address?: string | null;
-  notes?: string | null;
-  logoUrl?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-  organizationId?: string | null;
+  email?: string;
+  phone?: string;
+  website?: string;
+  address?: string;
+  notes?: string;
+  logoUrl?: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber?: string;
+  title?: string;
+  vendorName?: string;
+  issueDate?: Date;
+  dueDate?: Date;
+  amount?: number;
+  currency?: string;
+  status: InvoiceStatus;
+  invoiceType: InvoiceType;
+  notes?: string;
+  tags?: string[];
+  category?: Category;
+  vendor?: Vendor;
+  originalFileUrl?: string;
+  thumbnailUrl?: string;
+  extractedData?: ExtractedInvoiceData;
+  languageCode?: string;
+  lineItems?: InvoiceLineItem[];
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface User {
@@ -73,6 +100,9 @@ export interface Organization {
   id: string;
   name: string;
   logoUrl?: string | null;
+  industry?: string | null;
+  size?: 'small' | 'medium' | 'large';
+  invoiceVolume?: 'low' | 'medium' | 'high';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,19 +115,6 @@ export interface InvoiceFieldConfig {
   required?: boolean;
 }
 
-export interface ExtractedInvoiceData {
-  invoiceNumber?: string;
-  vendorName?: string;
-  issueDate?: string;
-  dueDate?: string;
-  amount?: number;
-  currency?: string;
-  items?: InvoiceItem[];
-  tax?: number;
-  notes?: string;
-  language?: string;
-}
-
 export interface InvoiceItem {
   description: string;
   quantity: number;
@@ -108,4 +125,15 @@ export interface InvoiceItem {
 export interface OCRResult {
   extractedData: ExtractedInvoiceData;
   suggestedCategories: string[];
+}
+
+// Onboarding data type
+export interface OnboardingData {
+  organization: {
+    name: string;
+    industry?: string;
+    size: 'small' | 'medium' | 'large';
+    invoiceVolume: 'low' | 'medium' | 'high';
+  };
+  aiSettings: AISettings;
 } 

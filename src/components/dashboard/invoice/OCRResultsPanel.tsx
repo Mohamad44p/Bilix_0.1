@@ -43,9 +43,12 @@ import {
   Pencil,
   Plus,
   X,
-  Info
+  Info,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  RefreshCw
 } from "lucide-react";
-import { ExtractedInvoiceData, Category, Vendor, InvoiceItem } from "@/lib/types";
+import { ExtractedInvoiceData, Category, Vendor, InvoiceLineItem, InvoiceType } from "@/lib/types";
 import { updateInvoiceCategory, updateInvoiceVendor } from "@/lib/actions/invoice";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -108,7 +111,25 @@ export default function OCRResultsPanel({
   
   // Initialize edited data with extracted data when component mounts or extractedData changes
   useEffect(() => {
-    setEditedData({ ...extractedData });
+    setEditedData({ 
+      ...extractedData,
+      invoiceType: extractedData.invoiceType || 'PURCHASE' 
+    });
+    
+    // Identify custom fields that might be in the extracted data
+    const standardFields = [
+      'invoiceNumber', 'vendorName', 'issueDate', 'dueDate', 
+      'amount', 'currency', 'tax', 'notes', 'language', 
+      'items', 'confidence', 'invoiceType'
+    ];
+    
+    // Set custom fields from extracted data
+    const customFieldsFromData = Object.keys(extractedData || {})
+      .filter(key => !standardFields.includes(key) && typeof extractedData[key] !== 'object');
+    
+    if (customFieldsFromData.length > 0) {
+      setCustomFields(customFieldsFromData);
+    }
   }, [extractedData]);
   
   const { toast } = useToast();
@@ -243,6 +264,9 @@ export default function OCRResultsPanel({
     try {
       setIsPending(true);
       
+      // Prepare line items data to save separately
+      const lineItems = editedData.items || [];
+      
       // In a real application, this would update the invoice with manually corrected data
       await invoiceService.updateInvoice(invoiceId, {
         invoiceNumber: editedData.invoiceNumber,
@@ -252,8 +276,16 @@ export default function OCRResultsPanel({
         amount: editedData.amount,
         currency: editedData.currency,
         notes: editedData.notes,
+        invoiceType: editedData.invoiceType as InvoiceType,
         extractedData: editedData
       });
+      
+      // For line items, submit each one to be saved in the database
+      if (lineItems.length > 0) {
+        await Promise.all(lineItems.map((item: InvoiceLineItem) => 
+          invoiceService.saveInvoiceLineItem(invoiceId, item)
+        ));
+      }
       
       toast({
         title: "Data updated",
@@ -312,7 +344,25 @@ export default function OCRResultsPanel({
     }
   };
   
+  // Get invoice type icon and text
+  const getInvoiceTypeDetails = (invoiceType: InvoiceType | undefined) => {
+    if (invoiceType === 'PAYMENT') {
+      return { 
+        icon: <ArrowUpCircle className="h-4 w-4 text-green-500" />, 
+        label: "Payment Invoice (Money Received)",
+        description: "This is a payment invoice, indicating money received for sales"
+      };
+    } else {
+      return { 
+        icon: <ArrowDownCircle className="h-4 w-4 text-amber-500" />, 
+        label: "Purchase Invoice (Money Paid)",
+        description: "This is a purchase invoice, indicating money paid for goods or services"
+      };
+    }
+  };
+  
   const confidenceInfo = getConfidenceIndicator(confidence);
+  const invoiceTypeInfo = getInvoiceTypeDetails(editedData.invoiceType as InvoiceType);
 
   return (
     <Card className="mt-6">
@@ -346,6 +396,11 @@ export default function OCRResultsPanel({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            
+            <Badge variant={editedData.invoiceType === 'PAYMENT' ? 'success' : 'secondary'} className="flex items-center gap-1">
+              {invoiceTypeInfo.icon}
+              <span className="ml-1">{editedData.invoiceType === 'PAYMENT' ? 'Payment' : 'Purchase'}</span>
+            </Badge>
           </div>
         </div>
         <CardDescription>
@@ -372,6 +427,44 @@ export default function OCRResultsPanel({
                   onCheckedChange={setIsEditingData} 
                 />
               </div>
+            </div>
+            
+            <div className="mb-4 p-3 bg-muted/20 border rounded-md">
+              <div className="flex items-start gap-2">
+                {invoiceTypeInfo.icon}
+                <div>
+                  <h4 className="text-sm font-medium">{invoiceTypeInfo.label}</h4>
+                  <p className="text-xs text-muted-foreground">{invoiceTypeInfo.description}</p>
+                </div>
+              </div>
+              
+              {isEditingData && (
+                <div className="mt-3 pt-3 border-t">
+                  <Label className="text-muted-foreground text-sm mb-2 block">Invoice Type</Label>
+                  <Select 
+                    value={editedData.invoiceType || 'PURCHASE'} 
+                    onValueChange={(value) => handleEditField("invoiceType", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select invoice type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PURCHASE">
+                        <div className="flex items-center gap-2">
+                          <ArrowDownCircle className="h-4 w-4 text-amber-500" />
+                          <span>Purchase Invoice (Money Paid)</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="PAYMENT">
+                        <div className="flex items-center gap-2">
+                          <ArrowUpCircle className="h-4 w-4 text-green-500" />
+                          <span>Payment Invoice (Money Received)</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -556,87 +649,160 @@ export default function OCRResultsPanel({
               </div>
             )}
             
-            {extractedData.items && extractedData.items.length > 0 && (
-              <div className="mt-6">
-                <Label className="text-muted-foreground text-sm block mb-2">Line Items</Label>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Unit Price</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      {isEditingData && <TableHead></TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(editedData.items || extractedData.items).map((item: InvoiceItem, index: number) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          {isEditingData ? (
-                            <Input
-                              value={item.description}
-                              onChange={(e) => {
-                                const updatedItems = [...(editedData.items || [])];
-                                updatedItems[index] = { ...updatedItems[index], description: e.target.value };
-                                handleEditField("items", updatedItems);
-                              }}
-                            />
-                          ) : (
-                            item.description
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {isEditingData ? (
+            <div className="mt-6">
+              <Label className="text-muted-foreground text-sm block mb-2">Line Items</Label>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Unit Price</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    {isEditingData && (
+                      <>
+                        <TableHead className="text-right">Tax Rate</TableHead>
+                        <TableHead className="text-right">Tax Amount</TableHead>
+                        <TableHead className="text-right">Discount</TableHead>
+                        <TableHead className="text-right">SKU</TableHead>
+                        <TableHead></TableHead>
+                      </>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(editedData.items || extractedData.items || []).map((item: InvoiceLineItem, index: number) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        {isEditingData ? (
+                          <Input
+                            value={item.description}
+                            onChange={(e) => {
+                              const updatedItems = [...(editedData.items || [])];
+                              updatedItems[index] = { ...updatedItems[index], description: e.target.value };
+                              handleEditField("items", updatedItems);
+                            }}
+                          />
+                        ) : (
+                          item.description
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isEditingData ? (
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const updatedItems = [...(editedData.items || [])];
+                              updatedItems[index] = { ...updatedItems[index], quantity: parseFloat(e.target.value) };
+                              handleEditField("items", updatedItems);
+                            }}
+                            className="w-20 ml-auto"
+                          />
+                        ) : (
+                          item.quantity
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isEditingData ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(e) => {
+                              const updatedItems = [...(editedData.items || [])];
+                              updatedItems[index] = { ...updatedItems[index], unitPrice: parseFloat(e.target.value) };
+                              handleEditField("items", updatedItems);
+                            }}
+                            className="w-24 ml-auto"
+                          />
+                        ) : (
+                          formatCurrency(item.unitPrice, editedData.currency)
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isEditingData ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={item.totalPrice}
+                            onChange={(e) => {
+                              const updatedItems = [...(editedData.items || [])];
+                              updatedItems[index] = { ...updatedItems[index], totalPrice: parseFloat(e.target.value) };
+                              handleEditField("items", updatedItems);
+                            }}
+                            className="w-24 ml-auto"
+                          />
+                        ) : (
+                          formatCurrency(item.totalPrice, editedData.currency)
+                        )}
+                      </TableCell>
+                      
+                      {isEditingData && (
+                        <>
+                          <TableCell className="text-right">
                             <Input
                               type="number"
-                              value={item.quantity}
+                              step="0.01"
+                              value={item.taxRate || ''}
                               onChange={(e) => {
                                 const updatedItems = [...(editedData.items || [])];
-                                updatedItems[index] = { ...updatedItems[index], quantity: parseFloat(e.target.value) };
+                                updatedItems[index] = { 
+                                  ...updatedItems[index], 
+                                  taxRate: e.target.value ? parseFloat(e.target.value) : undefined 
+                                };
                                 handleEditField("items", updatedItems);
                               }}
                               className="w-20 ml-auto"
+                              placeholder="%"
                             />
-                          ) : (
-                            item.quantity
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {isEditingData ? (
+                          </TableCell>
+                          <TableCell className="text-right">
                             <Input
                               type="number"
                               step="0.01"
-                              value={item.unitPrice}
+                              value={item.taxAmount || ''}
                               onChange={(e) => {
                                 const updatedItems = [...(editedData.items || [])];
-                                updatedItems[index] = { ...updatedItems[index], unitPrice: parseFloat(e.target.value) };
+                                updatedItems[index] = { 
+                                  ...updatedItems[index], 
+                                  taxAmount: e.target.value ? parseFloat(e.target.value) : undefined 
+                                };
                                 handleEditField("items", updatedItems);
                               }}
                               className="w-24 ml-auto"
                             />
-                          ) : (
-                            formatCurrency(item.unitPrice, editedData.currency)
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {isEditingData ? (
+                          </TableCell>
+                          <TableCell className="text-right">
                             <Input
                               type="number"
                               step="0.01"
-                              value={item.totalPrice}
+                              value={item.discount || ''}
                               onChange={(e) => {
                                 const updatedItems = [...(editedData.items || [])];
-                                updatedItems[index] = { ...updatedItems[index], totalPrice: parseFloat(e.target.value) };
+                                updatedItems[index] = { 
+                                  ...updatedItems[index], 
+                                  discount: e.target.value ? parseFloat(e.target.value) : undefined 
+                                };
                                 handleEditField("items", updatedItems);
                               }}
                               className="w-24 ml-auto"
                             />
-                          ) : (
-                            formatCurrency(item.totalPrice, editedData.currency)
-                          )}
-                        </TableCell>
-                        {isEditingData && (
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              value={item.productSku || ''}
+                              onChange={(e) => {
+                                const updatedItems = [...(editedData.items || [])];
+                                updatedItems[index] = { 
+                                  ...updatedItems[index], 
+                                  productSku: e.target.value || undefined 
+                                };
+                                handleEditField("items", updatedItems);
+                              }}
+                              className="w-24 ml-auto"
+                              placeholder="SKU"
+                            />
+                          </TableCell>
                           <TableCell>
                             <Button 
                               variant="ghost" 
@@ -650,36 +816,36 @@ export default function OCRResultsPanel({
                               <X className="h-4 w-4" />
                             </Button>
                           </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
-                    {isEditingData && (
-                      <TableRow>
-                        <TableCell colSpan={5}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            onClick={() => {
-                              const newItem = {
-                                description: "",
-                                quantity: 1,
-                                unitPrice: 0,
-                                totalPrice: 0
-                              };
-                              const updatedItems = [...(editedData.items || []), newItem];
-                              handleEditField("items", updatedItems);
-                            }}
-                          >
-                            <Plus className="h-3 w-3 mr-1" /> Add Item
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                        </>
+                      )}
+                    </TableRow>
+                  ))}
+                  {isEditingData && (
+                    <TableRow>
+                      <TableCell colSpan={isEditingData ? 9 : 5}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => {
+                            const newItem: InvoiceLineItem = {
+                              description: "",
+                              quantity: 1,
+                              unitPrice: 0,
+                              totalPrice: 0
+                            };
+                            const updatedItems = [...(editedData.items || []), newItem];
+                            handleEditField("items", updatedItems);
+                          }}
+                        >
+                          <Plus className="h-3 w-3 mr-1" /> Add Item
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
             
             <div className="space-y-2 mt-4">
               <Label className="text-muted-foreground text-sm">Notes</Label>
@@ -707,7 +873,24 @@ export default function OCRResultsPanel({
                       setIsEditingData(false);
                     }}
                   >
+                    <X className="h-4 w-4 mr-2" />
                     Cancel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      // Recalculate line item totals based on quantity and unit price
+                      if (editedData.items && editedData.items.length > 0) {
+                        const updatedItems = editedData.items.map(item => ({
+                          ...item,
+                          totalPrice: item.quantity * item.unitPrice
+                        }));
+                        handleEditField("items", updatedItems);
+                      }
+                    }}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Recalculate
                   </Button>
                   <Button 
                     onClick={saveEditedData}

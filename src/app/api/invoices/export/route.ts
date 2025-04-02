@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 import ExcelJS from 'exceljs';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatCurrency } from '@/lib/utils';
 import { auth } from '@clerk/nextjs/server';
 import db from '@/db/db';
 
@@ -34,11 +34,23 @@ interface DateRangeQuery {
  * Sanitize a string for use as a folder name
  */
 function sanitizeFolderName(name: string): string {
-  // Replace special characters and spaces with underscores
-  const sanitized = name.replace(/[^a-zA-Z0-9]/g, '_');
+  console.log(`Processing folder name: "${name}"`);
   
-  // Add trailing slash for folder format
-  return sanitized ? `${sanitized}/` : '';
+  // If it's undefined, null, or empty string, return empty string
+  if (!name || name === 'undefined' || name === 'null' || name.trim() === '') {
+    console.log('Empty or invalid folder name, returning empty string');
+    return '';
+  }
+  
+  // Replace special characters and spaces with underscores
+  const sanitized = name.trim().replace(/[^a-zA-Z0-9]/g, '_');
+  console.log(`Sanitized to: "${sanitized}"`);
+  
+  // Add trailing slash for folder format if not empty
+  const result = sanitized ? `${sanitized}/` : '';
+  console.log(`Final folder path: "${result}"`);
+  
+  return result;
 }
 
 /**
@@ -146,18 +158,10 @@ export async function POST(req: NextRequest) {
     const dateTo = formData.get('dateTo') as string || undefined;
     const invoiceIds = formData.getAll('invoiceIds') as string[];
     const rawFolderName = formData.get('folderName') as string || '';
+    
+    console.log('Raw folderName from request:', rawFolderName);
     const sanitizedFolderName = sanitizeFolderName(rawFolderName);
-    
-    // Build query for invoices
-    const dateQuery: DateRangeQuery = {};
-    
-    if (dateFrom) {
-      dateQuery.dateFrom = dateFrom;
-    }
-    
-    if (dateTo) {
-      dateQuery.dateTo = dateTo;
-    }
+    console.log('Final sanitizedFolderName:', sanitizedFolderName);
     
     // Fetch invoices
     let invoices: InvoiceWithRelations[] = [];
@@ -224,8 +228,20 @@ export async function POST(req: NextRequest) {
     let mimeType: string;
     
     // Create unique filename with folder structure if provided
-    const timestamp = new Date().toISOString().split('T')[0];
-    const fileName = `${sanitizedFolderName}invoices_export_${timestamp}_${exportId}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+    const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+    const baseFileName = `invoices_export_${timestamp}_${exportId}`;
+    // Use .html extension for PDF format to ensure browser can open it correctly
+    const fileExtension = format === 'pdf' ? 'html' : 'xlsx';
+    
+    // Ensure the folder structure is correct
+    let fileName = '';
+    if (sanitizedFolderName) {
+      fileName = `${sanitizedFolderName}${baseFileName}.${fileExtension}`;
+      console.log(`Creating export with folder: ${sanitizedFolderName}, format: ${format}, extension: ${fileExtension}`);
+    } else {
+      fileName = `${baseFileName}.${fileExtension}`;
+      console.log(`Creating export without folder, format: ${format}, extension: ${fileExtension}`);
+    }
     
     if (format === 'excel') {
       // Create Excel workbook
@@ -289,9 +305,236 @@ export async function POST(req: NextRequest) {
       fileContent = await workbook.xlsx.writeBuffer() as unknown as Buffer;
       mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     } else {
-      // PDF generation would go here in a real implementation
-      // For now, we'll just return an error since we're focusing on Excel
-      return NextResponse.json({ error: 'PDF export not yet implemented' }, { status: 501 });
+      // PDF Generation
+      console.log("Generating PDF export");
+      
+      // Create enhanced HTML content that's printer-friendly
+      const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Invoice Export - ${sanitizedFolderName ? `Folder: ${sanitizedFolderName.replace('/', '')}` : 'No Folder'}</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+          }
+          @media print {
+            body {
+              padding: 10px;
+              margin: 0;
+            }
+            .no-print {
+              display: none !important;
+            }
+            table {
+              width: 100%;
+              page-break-inside: auto;
+            }
+            tr {
+              page-break-inside: avoid;
+              page-break-after: auto;
+            }
+            thead {
+              display: table-header-group;
+            }
+            tfoot {
+              display: table-footer-group;
+            }
+          }
+          .no-print {
+            margin-bottom: 20px;
+          }
+          .print-tips {
+            background-color: #e6f2ff;
+            border: 1px solid #b3d9ff;
+            padding: 10px;
+            margin: 20px 0;
+            border-radius: 4px;
+          }
+          .print-button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+          }
+          .print-button:hover {
+            background-color: #1d4ed8;
+          }
+          h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #2563eb;
+            text-align: center;
+          }
+          h2 {
+            font-size: 16px;
+            color: #4b5563;
+            margin-top: 0;
+            text-align: center;
+            margin-bottom: 20px;
+          }
+          .meta {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            background-color: #f8fafc;
+            padding: 10px;
+            border-radius: 4px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            font-size: 14px;
+          }
+          th {
+            background-color: #f1f5f9;
+            text-align: left;
+            padding: 12px;
+            font-weight: 600;
+            border-bottom: 2px solid #cbd5e1;
+          }
+          td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+          }
+          tr:nth-child(even) {
+            background-color: #f8fafc;
+          }
+          .total-row {
+            font-weight: bold;
+            background-color: #f1f5f9;
+          }
+          .footer {
+            font-size: 12px;
+            color: #64748b;
+            text-align: center;
+            margin-top: 30px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 20px;
+          }
+          .header-logo {
+            text-align: center;
+            margin-bottom: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header-logo">
+          <svg width="120" height="40" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 5L30 20L20 35L10 20L20 5Z" fill="#2563EB" />
+            <path d="M40 15H80V25H40V15Z" fill="#2563EB" />
+            <path d="M90 15H110V25H90V15Z" fill="#2563EB" />
+          </svg>
+        </div>
+        <h1>Invoice Export Report</h1>
+        <h2>${sanitizedFolderName ? `Folder: ${sanitizedFolderName.replace('/', '')}` : ''}</h2>
+        
+        <div class="no-print">
+          <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+          
+          <div class="print-tips">
+            <strong>Printing Tips:</strong>
+            <ul>
+              <li>Click the button above or press Ctrl+P (⌘+P on Mac) to print</li>
+              <li>Select "Save as PDF" as the destination to save as a PDF file</li>
+              <li>Set "Scale" to "Fit to page" for better layout</li>
+              <li>Disable "Headers and footers" for a cleaner look</li>
+              <li>Choose "Color" for best results</li>
+            </ul>
+          </div>
+        </div>
+        
+        <div class="meta">
+          <div>Export Date: ${new Date().toLocaleDateString()}</div>
+          <div>Total Invoices: ${invoices.length}</div>
+          <div>Generated On: ${new Date().toLocaleString()}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              ${fields.map(field => {
+                const fieldNames: Record<string, string> = {
+                  invoiceNumber: 'Invoice Number',
+                  vendorName: 'Vendor',
+                  amount: 'Amount',
+                  currency: 'Currency',
+                  status: 'Status',
+                  issueDate: 'Issue Date',
+                  dueDate: 'Due Date',
+                  category: 'Category',
+                  tags: 'Tags',
+                  notes: 'Notes',
+                };
+                return `<th>${fieldNames[field] || field}</th>`;
+              }).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${invoices.map(invoice => `
+              <tr>
+                ${fields.map(field => {
+                  let value = '';
+                  switch (field) {
+                    case 'amount':
+                      value = formatCurrency(invoice.amount || 0, invoice.currency || 'USD');
+                      break;
+                    case 'issueDate':
+                      value = invoice.issueDate ? formatDate(invoice.issueDate) : '';
+                      break;
+                    case 'dueDate':
+                      value = invoice.dueDate ? formatDate(invoice.dueDate) : '';
+                      break;
+                    case 'category':
+                      value = invoice.category?.name || '';
+                      break;
+                    case 'tags':
+                      value = (invoice.tags || []).join(', ');
+                      break;
+                    case 'status':
+                      value = invoice.status || '';
+                      break;
+                    default:
+                      value = (invoice[field as keyof typeof invoice] as string) || '';
+                  }
+                  return `<td>${value}</td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="footer">
+          <p>Generated by Bilix Invoice Management System</p>
+          <p>This report can be saved as a PDF by using your browser's print function (Ctrl+P or ⌘+P)</p>
+        </div>
+        <script>
+          // Auto-print dialog on page load after a short delay
+          window.addEventListener('load', function() {
+            setTimeout(function() {
+              // Show print dialog automatically
+              window.print();
+            }, 1000);
+          });
+        </script>
+      </body>
+      </html>
+      `;
+      
+      // Use HTML MIME type instead of PDF since we're not generating a real PDF
+      fileContent = Buffer.from(htmlContent);
+      mimeType = 'text/html';
+
+      console.log("HTML report generated successfully");
     }
     
     // Upload to Vercel Blob
@@ -313,6 +556,8 @@ export async function POST(req: NextRequest) {
         folderName: sanitizedFolderName ? sanitizedFolderName.slice(0, -1) : null, // Remove trailing slash
       },
     });
+    
+    console.log(`Export saved to database with folderName: ${exportRecord.folderName || 'none'}`);
     
     return NextResponse.json({
       fileUrl: blob.url,

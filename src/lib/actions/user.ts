@@ -16,18 +16,42 @@ export async function syncUserWithDatabase() {
       throw new Error("User not authenticated");
     }
 
-    // Find or create user in our database
+    const email = clerkUser.emailAddresses[0]?.emailAddress || "";
+    
+    // Check if any user with this email already exists
+    const existingUserWithEmail = await db.user.findUnique({
+      where: { email }
+    });
+    
+    if (existingUserWithEmail && existingUserWithEmail.clerkId !== clerkUser.id) {
+      // A user with this email exists but has a different clerkId
+      // This can happen if a user signs up with the same email using a different auth method
+      console.warn(`User with email ${email} already exists with different clerkId`);
+      
+      // Update the existing user's clerkId to match the current auth
+      return await db.user.update({
+        where: { id: existingUserWithEmail.id },
+        data: {
+          clerkId: clerkUser.id,
+          firstName: clerkUser.firstName,
+          lastName: clerkUser.lastName,
+          profileImageUrl: clerkUser.imageUrl,
+        }
+      });
+    }
+
+    // If no conflict, proceed with normal upsert
     const user = await db.user.upsert({
       where: { clerkId: clerkUser.id },
       update: {
-        email: clerkUser.emailAddresses[0]?.emailAddress || "",
+        email,
         firstName: clerkUser.firstName,
         lastName: clerkUser.lastName,
         profileImageUrl: clerkUser.imageUrl,
       },
       create: {
         clerkId: clerkUser.id,
-        email: clerkUser.emailAddresses[0]?.emailAddress || "",
+        email,
         firstName: clerkUser.firstName,
         lastName: clerkUser.lastName,
         profileImageUrl: clerkUser.imageUrl,

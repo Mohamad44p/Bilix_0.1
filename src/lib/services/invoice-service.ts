@@ -1,4 +1,4 @@
-import { Invoice, InvoiceStatus, InvoiceCategory } from '@/lib/types';
+import { Invoice, InvoiceStatus, InvoiceCategory, InvoiceType, InvoiceLineItem } from '@/lib/types';
 
 // API endpoints
 const ENDPOINTS = {
@@ -6,6 +6,7 @@ const ENDPOINTS = {
   CATEGORIES: '/api/invoices/categories',
   TAGS: '/api/invoices/tags',
   BATCH: '/api/invoices/batch',
+  LINE_ITEMS: '/api/invoices/line-items',
 };
 
 // Get all invoices with optional filtering
@@ -81,19 +82,63 @@ export async function createInvoice(invoice: Omit<Invoice, 'id'>): Promise<Invoi
 
 // Update an existing invoice
 export async function updateInvoice(id: string, data: Partial<Invoice>): Promise<Invoice> {
-  const response = await fetch(`${ENDPOINTS.INVOICES}/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to update invoice with ID: ${id}`);
+  try {
+    console.log(`Updating invoice ${id} with data:`, JSON.stringify(data, null, 2));
+
+    // Normalize the status to uppercase if it exists
+    if (data.status) {
+      data.status = data.status.toUpperCase() as InvoiceStatus;
+      console.log(`Normalized status to: ${data.status}`);
+    }
+    
+    // Simplify the update payload to only include what we need to change
+    const updateData: Record<string, any> = {};
+    
+    // Only include fields that are actually provided
+    Object.keys(data).forEach(key => {
+      if (data[key as keyof typeof data] !== undefined) {
+        updateData[key] = data[key as keyof typeof data];
+      }
+    });
+    
+    console.log(`Simplified update data:`, JSON.stringify(updateData, null, 2));
+    
+    const response = await fetch(`${ENDPOINTS.INVOICES}/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData),
+    });
+    
+    if (!response.ok) {
+      let errorMessage = `Failed to update invoice with ID: ${id}`;
+      let errorData;
+      
+      try {
+        errorData = await response.json();
+        console.error("API error response:", errorData);
+        if (errorData && errorData.error) {
+          errorMessage += ` - ${errorData.error}`;
+        }
+        if (errorData && errorData.details) {
+          errorMessage += ` (${errorData.details})`;
+        }
+      } catch (parseError) {
+        console.error("Could not parse error response:", parseError);
+        errorMessage += ` - Status: ${response.status} ${response.statusText}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    const updatedInvoice = await response.json();
+    console.log(`Successfully updated invoice ${id}`);
+    return updatedInvoice;
+  } catch (error) {
+    console.error("Update invoice error:", error);
+    throw error;
   }
-  
-  return response.json();
 }
 
 // Delete an invoice
@@ -113,23 +158,54 @@ export async function batchProcessInvoices(
   invoiceIds: string[],
   additionalData?: Record<string, unknown>
 ): Promise<{ success: boolean, processedIds: string[], failedIds: string[] }> {
-  const response = await fetch(ENDPOINTS.BATCH, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation,
-      invoiceIds,
-      ...additionalData,
-    }),
-  });
-  
-  if (!response.ok) {
-    throw new Error('Failed to process batch operation');
+  try {
+    // Normalize operation name
+    const normalizedOperation = operation.toLowerCase();
+    
+    // Validate invoiceIds
+    if (!invoiceIds || invoiceIds.length === 0) {
+      throw new Error('No invoice IDs provided for batch operation');
+    }
+    
+    console.log(`Starting batch operation '${normalizedOperation}' on ${invoiceIds.length} invoices`);
+    
+    const response = await fetch(ENDPOINTS.BATCH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        operation: normalizedOperation,
+        invoiceIds,
+        ...(additionalData || {}),
+      }),
+    });
+    
+    if (!response.ok) {
+      let errorMessage = `Batch operation '${operation}' failed`;
+      try {
+        const errorData = await response.json();
+        console.error("Batch API error:", errorData);
+        if (errorData?.error) {
+          errorMessage += `: ${errorData.error}`;
+        } else {
+          errorMessage += `: ${response.status} ${response.statusText}`;
+        }
+      } catch (parseError) {
+        console.error("Could not parse batch error response");
+        errorMessage += `: ${response.status} ${response.statusText}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    const result = await response.json();
+    console.log(`Batch operation '${normalizedOperation}' completed:`, result);
+    return result;
+  } catch (error) {
+    console.error(`Batch operation '${operation}' error:`, error);
+    throw error;
   }
-  
-  return response.json();
 }
 
 // Auto-categorize invoice
@@ -187,4 +263,52 @@ export async function getTags(): Promise<string[]> {
   }
   
   return response.json();
+}
+
+// Save an invoice line item
+export async function saveInvoiceLineItem(invoiceId: string, lineItem: InvoiceLineItem): Promise<InvoiceLineItem> {
+  const response = await fetch(`${ENDPOINTS.LINE_ITEMS}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      invoiceId,
+      ...lineItem
+    }),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to save line item for invoice ID: ${invoiceId}`);
+  }
+  
+  return response.json();
+}
+
+// Update an invoice line item
+export async function updateInvoiceLineItem(id: string, data: Partial<InvoiceLineItem>): Promise<InvoiceLineItem> {
+  const response = await fetch(`${ENDPOINTS.LINE_ITEMS}/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to update line item with ID: ${id}`);
+  }
+  
+  return response.json();
+}
+
+// Delete an invoice line item
+export async function deleteInvoiceLineItem(id: string): Promise<void> {
+  const response = await fetch(`${ENDPOINTS.LINE_ITEMS}/${id}`, {
+    method: 'DELETE',
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to delete line item with ID: ${id}`);
+  }
 } 

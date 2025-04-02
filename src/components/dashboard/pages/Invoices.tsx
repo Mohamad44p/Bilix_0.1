@@ -59,6 +59,7 @@ const Invoices = () => {
     filterSuggestions,
     refresh,
     setSearch,
+    processNaturalLanguageQuery,
   } = useInvoices({
     enableAutoRefresh: autoRefresh,
   });
@@ -98,11 +99,13 @@ const Invoices = () => {
     tags?: string[];
     dateRange?: { start: string; end: string };
   }) => {
+    console.log("Applying filters:", filters);
+    
     if (filters.status !== undefined) setStatus(filters.status);
     if (filters.category !== undefined) setCategory(filters.category);
     if (filters.tags !== undefined) setTags(filters.tags);
     if (filters.dateRange !== undefined) setDateRange(filters.dateRange);
-    setPage(1);
+    setPage(1); // Reset to first page when filters change
     
     // Show toast for applied filters
     const appliedFilters = [];
@@ -117,6 +120,11 @@ const Invoices = () => {
         description: appliedFilters.join(', '),
       });
     }
+    
+    // Refresh the data with the new filters
+    setTimeout(() => {
+      refresh();
+    }, 100);
   };
 
   // Handle batch operations
@@ -187,19 +195,48 @@ const Invoices = () => {
     }
     
     try {
+      // Show different toast messages based on export format
+      if (options.format === 'pdf') {
+        toast({
+          title: "Preparing PDF report...",
+          description: "Your report will open in a new tab and can be printed to PDF.",
+        });
+      } else {
+        toast({
+          title: "Preparing Excel export...",
+          description: "Your Excel spreadsheet will download shortly.",
+        });
+      }
+      
       const result = await exportService.exportInvoices(
         options.includeAll ? [] : selectedInvoiceIds, 
         options
       );
       
       if (result.fileUrl) {
-        // Trigger download
-        exportService.downloadFile(result.fileUrl, result.fileName || 'invoices-export.xlsx');
+        // For folders, show a more specific toast
+        const folderMessage = options.folderName 
+          ? `Saved to folder: ${options.folderName}` 
+          : '';
         
-        toast({
-          title: "Export complete",
-          description: `${options.includeAll ? 'All invoices' : selectedInvoiceIds.length + ' invoices'} exported successfully.`,
-        });
+        // For PDF (HTML reports), the fileName will end with .html
+        const fileExtension = result.fileName.toLowerCase().endsWith('.html') ? 'html' : 'xlsx';
+        
+        // Trigger download or open in new tab
+        exportService.downloadFile(result.fileUrl, result.fileName || `invoices-export.${fileExtension}`);
+        
+        // Custom success messages based on format
+        if (options.format === 'pdf') {
+          toast({
+            title: "PDF Report Generated",
+            description: `Your report is opening in a new tab. ${folderMessage} Use your browser's print function to save as PDF.`,
+          });
+        } else {
+          toast({
+            title: "Excel Export Complete",
+            description: `${options.includeAll ? 'All invoices' : selectedInvoiceIds.length + ' invoices'} exported successfully. ${folderMessage}`,
+          });
+        }
       }
     } catch (error) {
       console.error("Export failed:", error);
@@ -296,6 +333,34 @@ const Invoices = () => {
   // Check if any filters are active
   const hasActiveFilters = !!status || !!category || (tags && tags.length > 0) || !!dateRange;
 
+  // AI search examples to showcase to users
+  const aiSearchExamples = [
+    "Show invoices less than $1000",
+    "Find all overdue invoices from last month",
+    "Which vendors did I pay the most in December?",
+    "Invoices from Amazon over $500 this year",
+    "Show me pending bills due this week",
+    "What's my total spend on software subscriptions?",
+    "Find all utility bills from Q1 2023"
+  ];
+  
+  // Randomly select an example for the placeholder
+  const randomExample = () => {
+    const index = Math.floor(Math.random() * aiSearchExamples.length);
+    return aiSearchExamples[index];
+  };
+  
+  // Handle AI search submit
+  const handleAISearch = () => {
+    if (!naturalLanguageQuery.trim()) return;
+    
+    console.log("AI search submitted:", naturalLanguageQuery);
+    processNaturalLanguageQuery(naturalLanguageQuery);
+  };
+
+  // Fix: Create a placeholder that doesn't need quotes
+  const aiPlaceholder = `Try: ${randomExample()}`;
+
   return (
     <DashboardLayout>
       <div className="flex items-center justify-between mb-6">
@@ -329,25 +394,38 @@ const Invoices = () => {
                 <Input
                   type="search"
                   placeholder={isAISearchMode 
-                    ? "Try 'Show overdue invoices from last month' or 'Find Amazon bills over $100'"
+                    ? aiPlaceholder
                     : "Search invoices by number, vendor or amount..."}
                   className="pl-9 pr-9"
                   value={isAISearchMode ? naturalLanguageQuery : searchQuery}
                   onChange={(e) => {
                     const query = e.target.value;
+                    console.log(`Search input changed. AI mode: ${isAISearchMode}, Query: ${query}`);
+                    
                     if (isAISearchMode) {
                       setNaturalLanguageQuery(query);
+                      // Clear regular search when in AI mode
                       setSearch("");
                     } else {
                       setSearchQuery(query);
                       setSearch(query);
+                      // Clear AI query when in regular mode
                       setNaturalLanguageQuery("");
                     }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      refresh();
+                      console.log(`Search triggered. AI mode: ${isAISearchMode}, Query: ${isAISearchMode ? naturalLanguageQuery : searchQuery}`);
+                      
+                      // Force clear any conflicting search parameters
+                      if (isAISearchMode && naturalLanguageQuery) {
+                        setSearch("");
+                        handleAISearch();
+                      } else if (!isAISearchMode && searchQuery) {
+                        setNaturalLanguageQuery("");
+                        refresh();
+                      }
                     }
                   }}
                 />
@@ -386,7 +464,7 @@ const Invoices = () => {
                           console.log("Switching to AI mode");
                           toast({
                             title: "AI search activated",
-                            description: "Try natural language queries like 'invoices from last month'"
+                            description: "Try natural language queries like 'invoices from last month' or 'bills under $500'"
                           });
                           
                           if (searchQuery) {
@@ -415,6 +493,9 @@ const Invoices = () => {
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>{isAISearchMode ? "Switch to Regular Search" : "Enable AI Search"}</p>
+                    {!isAISearchMode && (
+                      <p className="text-xs text-muted-foreground mt-1">Ask questions like &quot;invoices under $500&quot;</p>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -424,7 +505,7 @@ const Invoices = () => {
                 className="flex-shrink-0"
                 onClick={() => {
                   if (isAISearchMode) {
-                    refresh();
+                    handleAISearch();
                   } else if (searchQuery) {
                     refresh();
                   } else {

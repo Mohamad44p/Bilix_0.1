@@ -29,7 +29,22 @@ model User {
   vendors           Vendor[]
   conversations     Conversation[]
   exports           ExportHistory[]
+  aiSettings        AISettings?
+  vendorPreferences VendorTypePreference[]
   role              UserRole       @default(USER)
+}
+
+// AI Settings model for user preferences
+model AISettings {
+  id                 String     @id @default(cuid())
+  userId             String     @unique
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customInstructions String?    @db.Text
+  confidenceThreshold Float     @default(0.7)
+  preferredCategories String[]
+  sampleInvoiceUrls   String[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 }
 
 enum UserRole {
@@ -44,6 +59,9 @@ model Organization {
   id           String    @id @default(cuid())
   name         String
   logoUrl      String?
+  industry     String?
+  size         String?   // "small", "medium", "large"
+  invoiceVolume String?  // "low", "medium", "high"
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   members      User[]    @relation("OrganizationToUser")
@@ -65,6 +83,7 @@ model Invoice {
   amount          Float?
   currency        String?   @default("USD")
   status          InvoiceStatus @default(PENDING)
+  invoiceType     String?   @default("PURCHASE")  // "PURCHASE" or "PAYMENT"
   notes           String?
   tags            String[]
   categoryId      String?
@@ -181,4 +200,17 @@ model ExportHistory {
 
   @@index([userId])
   @@index([organizationId])
+}
+
+// Model for learning vendor invoice type preferences
+model VendorTypePreference {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendorName    String
+  invoiceType   String    // "PURCHASE" or "PAYMENT"
+  confidence    Float     @default(0.7)
+  lastUpdated   DateTime  @default(now())
+
+  @@index([userId, vendorName]) // Index for faster lookups
 }
