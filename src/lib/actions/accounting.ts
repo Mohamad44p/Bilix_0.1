@@ -1,6 +1,6 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { OpenAI } from "openai";
@@ -13,6 +13,7 @@ import {
   calculateTaxLiabilities,
   generateAiSummary
 } from "@/lib/services/accounting-service";
+import { TrialBalanceAccount } from "@/components/dashboard/accounting/TrialBalance";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -23,42 +24,43 @@ const openai = new OpenAI({
  */
 export async function getGeneralLedger() {
   const session = await auth();
-  const userId = session?.userId;
+  const user = await currentUser();
+  const userId = user?.id || session?.userId;
   const orgId = session?.orgId;
   
-  if (!userId || !orgId) {
+  if (!userId) {
     throw new Error("Unauthorized");
   }
   
   try {
     const invoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
       },
       include: {
         vendor: true,
-        customer: true,
         category: true,
       },
       orderBy: {
-        date: "desc",
+        issueDate: "desc",
       },
     });
     
     const ledgerEntries = invoices.map((invoice) => {
-      const isPayment = invoice.type === "PAYMENT";
+      const isPayment = invoice.invoiceType === "PAYMENT";
       
       return {
         id: invoice.id,
-        date: invoice.date,
+        date: invoice.issueDate || invoice.createdAt,
         description: invoice.title || (isPayment ? "Payment received" : "Purchase made"),
         reference: invoice.invoiceNumber || invoice.id.substring(0, 8),
         account: isPayment ? "Accounts Receivable" : "Accounts Payable",
         counterAccount: isPayment ? "Revenue" : invoice.category?.name || "Expenses",
-        debit: isPayment ? 0 : Number(invoice.amount),
-        credit: isPayment ? Number(invoice.amount) : 0,
+        debit: isPayment ? 0 : Number(invoice.amount || 0),
+        credit: isPayment ? Number(invoice.amount || 0) : 0,
         balance: 0, // Will be calculated below
-        entity: isPayment ? invoice.customer?.name || "Unknown Customer" : invoice.vendor?.name || "Unknown Vendor",
+        entity: isPayment ? "Customer" : invoice.vendor?.name || invoice.vendorName || "Unknown Vendor",
       };
     });
     
@@ -80,10 +82,11 @@ export async function getGeneralLedger() {
  */
 export async function getProfitLoss(period: "month" | "quarter" | "year") {
   const session = await auth();
-  const userId = session?.userId;
+  const user = await currentUser();
+  const userId = user?.id || session?.userId;
   const orgId = session?.orgId;
   
-  if (!userId || !orgId) {
+  if (!userId) {
     throw new Error("Unauthorized");
   }
   
@@ -101,8 +104,9 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     
     const invoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
-        date: {
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
+        issueDate: {
           gte: startDate,
         },
       },
@@ -110,7 +114,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
         category: true,
       },
       orderBy: {
-        date: "asc",
+        issueDate: "asc",
       },
     });
     
@@ -120,9 +124,9 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     let totalExpenses = 0;
     
     invoices.forEach((invoice) => {
-      const amount = Number(invoice.amount);
+      const amount = Number(invoice.amount || 0);
       
-      if (invoice.type === "PAYMENT") {
+      if (invoice.invoiceType === "PAYMENT") {
         const category = invoice.category?.name || "Uncategorized Revenue";
         revenueByCategory[category] = (revenueByCategory[category] || 0) + amount;
         totalRevenue += amount;
@@ -146,7 +150,8 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       const monthYear = monthDate.getFullYear();
       
       const monthInvoices = invoices.filter((invoice) => {
-        const invoiceDate = new Date(invoice.date);
+        if (!invoice.issueDate) return false;
+        const invoiceDate = new Date(invoice.issueDate);
         return invoiceDate.getMonth() === monthDate.getMonth() && 
                invoiceDate.getFullYear() === monthDate.getFullYear();
       });
@@ -155,8 +160,8 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       let monthExpenses = 0;
       
       monthInvoices.forEach((invoice) => {
-        const amount = Number(invoice.amount);
-        if (invoice.type === "PAYMENT") {
+        const amount = Number(invoice.amount || 0);
+        if (invoice.invoiceType === "PAYMENT") {
           monthRevenue += amount;
         } else {
           monthExpenses += amount;
@@ -192,8 +197,9 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     
     const previousInvoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
-        date: {
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
+        issueDate: {
           gte: previousStartDate,
           lt: startDate,
         },
@@ -204,8 +210,8 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     let previousExpenses = 0;
     
     previousInvoices.forEach((invoice) => {
-      const amount = Number(invoice.amount);
-      if (invoice.type === "PAYMENT") {
+      const amount = Number(invoice.amount || 0);
+      if (invoice.invoiceType === "PAYMENT") {
         previousRevenue += amount;
       } else {
         previousExpenses += amount;
@@ -250,39 +256,40 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
  */
 export async function getBalanceSheet() {
   const session = await auth();
-  const userId = session?.userId;
+  const user = await currentUser();
+  const userId = user?.id || session?.userId;
   const orgId = session?.orgId;
   
-  if (!userId || !orgId) {
+  if (!userId) {
     throw new Error("Unauthorized");
   }
   
   try {
     const invoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
       },
       include: {
         vendor: true,
-        customer: true,
       },
       orderBy: {
-        date: "asc",
+        issueDate: "asc",
       },
     });
     
     const cashAndEquivalents = invoices.reduce((total, invoice) => {
-      if (invoice.type === "PAYMENT" && invoice.status === "PAID") {
-        return total + Number(invoice.amount);
-      } else if (invoice.type === "PURCHASE" && invoice.status === "PAID") {
-        return total - Number(invoice.amount);
+      if (invoice.invoiceType === "PAYMENT" && invoice.status === "PAID") {
+        return total + Number(invoice.amount || 0);
+      } else if (invoice.invoiceType === "PURCHASE" && invoice.status === "PAID") {
+        return total - Number(invoice.amount || 0);
       }
       return total;
     }, 0);
     
     const accountsReceivable = invoices.reduce((total, invoice) => {
-      if (invoice.type === "PAYMENT" && invoice.status !== "PAID") {
-        return total + Number(invoice.amount);
+      if (invoice.invoiceType === "PAYMENT" && invoice.status !== "PAID") {
+        return total + Number(invoice.amount || 0);
       }
       return total;
     }, 0);
@@ -296,8 +303,8 @@ export async function getBalanceSheet() {
     const totalAssets = totalCurrentAssets + fixedAssets;
     
     const accountsPayable = invoices.reduce((total, invoice) => {
-      if (invoice.type === "PURCHASE" && invoice.status !== "PAID") {
-        return total + Number(invoice.amount);
+      if (invoice.invoiceType === "PURCHASE" && invoice.status !== "PAID") {
+        return total + Number(invoice.amount || 0);
       }
       return total;
     }, 0);
@@ -316,25 +323,26 @@ export async function getBalanceSheet() {
     
     const previousInvoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
-        date: {
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
+        issueDate: {
           lt: oneMonthAgo,
         },
       },
     });
     
     const previousCashAndEquivalents = previousInvoices.reduce((total, invoice) => {
-      if (invoice.type === "PAYMENT" && invoice.status === "PAID") {
-        return total + Number(invoice.amount);
-      } else if (invoice.type === "PURCHASE" && invoice.status === "PAID") {
-        return total - Number(invoice.amount);
+      if (invoice.invoiceType === "PAYMENT" && invoice.status === "PAID") {
+        return total + Number(invoice.amount || 0);
+      } else if (invoice.invoiceType === "PURCHASE" && invoice.status === "PAID") {
+        return total - Number(invoice.amount || 0);
       }
       return total;
     }, 0);
     
     const previousAccountsReceivable = previousInvoices.reduce((total, invoice) => {
-      if (invoice.type === "PAYMENT" && invoice.status !== "PAID") {
-        return total + Number(invoice.amount);
+      if (invoice.invoiceType === "PAYMENT" && invoice.status !== "PAID") {
+        return total + Number(invoice.amount || 0);
       }
       return total;
     }, 0);
@@ -342,8 +350,8 @@ export async function getBalanceSheet() {
     const previousTotalCurrentAssets = previousCashAndEquivalents + previousAccountsReceivable;
     
     const previousAccountsPayable = previousInvoices.reduce((total, invoice) => {
-      if (invoice.type === "PURCHASE" && invoice.status !== "PAID") {
-        return total + Number(invoice.amount);
+      if (invoice.invoiceType === "PURCHASE" && invoice.status !== "PAID") {
+        return total + Number(invoice.amount || 0);
       }
       return total;
     }, 0);
@@ -414,17 +422,19 @@ export async function getBalanceSheet() {
  */
 export async function getTrialBalance() {
   const session = await auth();
-  const userId = session?.userId;
+  const user = await currentUser();
+  const userId = user?.id || session?.userId;
   const orgId = session?.orgId;
   
-  if (!userId || !orgId) {
+  if (!userId) {
     throw new Error("Unauthorized");
   }
   
   try {
     const invoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
       },
       include: {
         category: true,
@@ -443,7 +453,7 @@ export async function getTrialBalance() {
     
     const categories = new Set<string>();
     invoices.forEach((invoice) => {
-      if (invoice.type === "PURCHASE" && invoice.category?.name) {
+      if (invoice.invoiceType === "PURCHASE" && invoice.category?.name) {
         categories.add(invoice.category.name);
       }
     });
@@ -462,9 +472,9 @@ export async function getTrialBalance() {
     });
     
     invoices.forEach((invoice) => {
-      const amount = Number(invoice.amount);
+      const amount = Number(invoice.amount || 0);
       
-      if (invoice.type === "PAYMENT") {
+      if (invoice.invoiceType === "PAYMENT") {
         if (invoice.status === "PAID") {
           const cashAccount = accounts.find((a) => a.id === "cash");
           if (cashAccount) cashAccount.debit += amount;
@@ -512,7 +522,7 @@ export async function getTrialBalance() {
     const totalCredits = accounts.reduce((sum, account) => sum + account.credit, 0);
     const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01;
     
-    const aiValidation = await validateTrialBalanceWithAI(accounts, totalDebits, totalCredits);
+    const aiValidation = await validateTrialBalanceWithAI(accounts as TrialBalanceAccount[], totalDebits, totalCredits);
     
     return {
       accounts,
@@ -533,10 +543,11 @@ export async function getTrialBalance() {
  */
 export async function getCashFlowProjection(period: "30days" | "60days" | "90days") {
   const session = await auth();
-  const userId = session?.userId;
+  const user = await currentUser();
+  const userId = user?.id || session?.userId;
   const orgId = session?.orgId;
   
-  if (!userId || !orgId) {
+  if (!userId) {
     throw new Error("Unauthorized");
   }
   
@@ -545,29 +556,45 @@ export async function getCashFlowProjection(period: "30days" | "60days" | "90day
     
     const invoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
       },
       include: {
         vendor: true,
-        customer: true,
       },
       orderBy: {
-        date: "desc",
+        issueDate: "desc",
       },
     });
     
     const currentBalance = invoices.reduce((total, invoice) => {
       if (invoice.status === "PAID") {
-        if (invoice.type === "PAYMENT") {
-          return total + Number(invoice.amount);
+        if (invoice.invoiceType === "PAYMENT") {
+          return total + Number(invoice.amount || 0);
         } else {
-          return total - Number(invoice.amount);
+          return total - Number(invoice.amount || 0);
         }
       }
       return total;
     }, 0);
     
-    const predictions = [];
+    type SourceItem = {
+      id: string;
+      name: string;
+      amount: number;
+      probability: number;
+    };
+    
+    const predictions: Array<{
+      date: Date;
+      inflow: number;
+      outflow: number;
+      netFlow: number;
+      balance: number;
+      inflowSources: SourceItem[];
+      outflowSources: SourceItem[];
+    }> = [];
+    
     const now = new Date();
     let runningBalance = currentBalance;
     
@@ -581,24 +608,24 @@ export async function getCashFlowProjection(period: "30days" | "60days" | "90day
         return dueDate.toDateString() === date.toDateString() && invoice.status !== "PAID";
       });
       
-      const inflowSources = [];
-      const outflowSources = [];
+      const inflowSources: SourceItem[] = [];
+      const outflowSources: SourceItem[] = [];
       
       dueInvoices.forEach((invoice) => {
-        const amount = Number(invoice.amount);
+        const amount = Number(invoice.amount || 0);
         const probability = calculatePaymentProbability(invoice);
         
-        if (invoice.type === "PAYMENT") {
+        if (invoice.invoiceType === "PAYMENT") {
           inflowSources.push({
             id: invoice.id,
-            name: invoice.customer?.name || "Unknown Customer",
+            name: "Customer",
             amount,
             probability,
           });
         } else {
           outflowSources.push({
             id: invoice.id,
-            name: invoice.vendor?.name || "Unknown Vendor",
+            name: invoice.vendor?.name || invoice.vendorName || "Unknown Vendor",
             amount,
             probability: 1, // Assume 100% probability for outflows
           });
@@ -647,22 +674,28 @@ export async function getCashFlowProjection(period: "30days" | "60days" | "90day
  */
 export async function getAiFinancialInsights() {
   const session = await auth();
-  const userId = session?.userId;
+  const user = await currentUser();
+  const userId = user?.id || session?.userId;
   const orgId = session?.orgId;
   
-  if (!userId || !orgId) {
+  if (!userId) {
     throw new Error("Unauthorized");
   }
   
   try {
     const invoices = await db.invoice.findMany({
       where: {
-        organizationId: orgId,
+        userId: userId,
+        ...(orgId && { organizationId: orgId }),
       },
       include: {
         vendor: true,
-        customer: true,
         category: true,
+        // lineItems: {
+        //   include: {
+        //     attributes: true
+        //   }
+        // }
       },
     });
     
