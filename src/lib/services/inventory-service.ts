@@ -140,7 +140,7 @@ export async function updateInventoryFromInvoice(
     const productName = item.description;
     const quantity = item.quantity || 1;
     
-    if (quantity <= 0) continue;
+    const effectiveQuantity = quantity <= 0 ? 1 : quantity;
     
     let inventoryItem = await db.inventory.findFirst({
       where: {
@@ -149,7 +149,7 @@ export async function updateInventoryFromInvoice(
       }
     });
     
-    const quantityChange = invoiceType === 'PURCHASE' ? quantity : -quantity;
+    const quantityChange = invoiceType === 'PURCHASE' ? effectiveQuantity : -effectiveQuantity;
     
     if (inventoryItem) {
       const previousQuantity = inventoryItem.currentQuantity;
@@ -165,7 +165,7 @@ export async function updateInventoryFromInvoice(
               newQuantity,
               changeReason: invoiceType,
               invoiceId,
-              notes: `${invoiceType === 'PURCHASE' ? 'Added' : 'Removed'} ${quantity} units from invoice ${invoiceId}`
+              notes: `${invoiceType === 'PURCHASE' ? 'Added' : 'Removed'} ${effectiveQuantity} units from invoice ${invoiceId}`
             }
           }
         }
@@ -180,7 +180,7 @@ export async function updateInventoryFromInvoice(
         await db.inventory.create({
           data: {
             productName,
-            currentQuantity: quantity,
+            currentQuantity: effectiveQuantity,
             userId,
             organizationId,
             attributes: {
