@@ -15,6 +15,10 @@ const lineItemSchema = z.object({
   discount: z.number().nonnegative().optional(),
   productSku: z.string().optional(),
   notes: z.string().optional(),
+  attributes: z.array(z.object({
+    name: z.string(),
+    value: z.string()
+  })).optional(),
 });
 
 /**
@@ -69,6 +73,14 @@ export async function POST(req: NextRequest) {
         productSku: validatedData.productSku,
         notes: validatedData.notes,
         invoiceId: validatedData.invoiceId,
+        ...(validatedData.attributes && validatedData.attributes.length > 0 && {
+          attributes: {
+            create: validatedData.attributes.map(attr => ({
+              name: attr.name,
+              value: attr.value
+            }))
+          }
+        })
       },
     });
 
@@ -137,9 +149,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Get line items for the invoice
-    const lineItems = await db.invoiceLineItem.findMany({
+    const lineItems = await db.InvoiceLineItem.findMany({
       where: {
         invoiceId,
+      },
+      include: {
+        attributes: true
       },
       orderBy: {
         createdAt: "asc",
@@ -154,4 +169,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}              

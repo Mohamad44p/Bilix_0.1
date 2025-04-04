@@ -14,6 +14,14 @@ export interface InvoiceLineItem {
   productSku?: string;
   notes?: string;
   invoiceId?: string;
+  attributes?: LineItemAttribute[];
+}
+
+export interface LineItemAttribute {
+  id?: string;
+  name: string;
+  value: string;
+  lineItemId?: string;
 }
 
 export interface AISettings {
@@ -136,4 +144,4 @@ export interface OnboardingData {
     invoiceVolume: 'low' | 'medium' | 'high';
   };
   aiSettings: AISettings;
-} 
+}  
