@@ -101,6 +101,7 @@ model Invoice {
   organizationId  String?
   organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   analysis        AIAnalysis?
+  lineItems       InvoiceLineItem[]
 }
 
 // Category model for invoice categorization
@@ -213,4 +214,34 @@ model VendorTypePreference {
   lastUpdated   DateTime  @default(now())
 
   @@index([userId, vendorName]) // Index for faster lookups
+}
+
+// Invoice Line Item model
+model InvoiceLineItem {
+  id          String    @id @default(cuid())
+  description String
+  quantity    Float
+  unitPrice   Float
+  totalPrice  Float
+  taxRate     Float?
+  taxAmount   Float?
+  discount    Float?
+  productSku  String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  invoiceId   String
+  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  attributes  LineItemAttribute[]
+}
+
+// Line Item Attribute model for dynamic attributes
+model LineItemAttribute {
+  id            String    @id @default(cuid())
+  name          String    // e.g., "color", "size", "material"
+  value         String    // e.g., "red", "large", "cotton"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lineItemId    String
+  lineItem      InvoiceLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
 }

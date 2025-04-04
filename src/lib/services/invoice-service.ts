@@ -1,4 +1,4 @@
-import { Invoice, InvoiceStatus, InvoiceCategory, InvoiceType, InvoiceLineItem } from '@/lib/types';
+import { Invoice, InvoiceStatus, Category as InvoiceCategory, InvoiceType, InvoiceLineItem } from '@/lib/types';
 
 // API endpoints
 const ENDPOINTS = {
@@ -311,4 +311,4 @@ export async function deleteInvoiceLineItem(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete line item with ID: ${id}`);
   }
-} 
+}  

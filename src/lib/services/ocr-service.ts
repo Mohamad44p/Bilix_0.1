@@ -27,6 +27,10 @@ interface InvoiceLineItem {
   discount?: number;
   productSku?: string;
   notes?: string;
+  attributes?: {
+    name: string;
+    value: string;
+  }[];
 }
 
 // Default fields to extract from invoices
@@ -366,7 +370,11 @@ function postProcessExtractionResults(data: ExtractedInvoiceData, organizationDa
       taxRate: typeof item.taxRate === 'string' ? parseFloat(item.taxRate as string) : item.taxRate,
       taxAmount: typeof item.taxAmount === 'string' ? parseFloat(item.taxAmount as string) : item.taxAmount,
       discount: typeof item.discount === 'string' ? parseFloat(item.discount as string) : item.discount,
-      productSku: item.productSku || undefined
+      productSku: item.productSku || undefined,
+      attributes: Array.isArray(item.attributes) ? item.attributes.map(attr => ({
+        name: attr.name || '',
+        value: attr.value || ''
+      })) : undefined
     }));
   }
   
@@ -550,6 +558,8 @@ DETAILED INSTRUCTIONS:
    - Scan tables carefully for this information
    - Preserve exact descriptions and quantities
    - Convert all numeric values to numbers (not strings)
+   - Extract any dynamic attributes for each line item (e.g., color, size, material, dimensions)
+   - Store dynamic attributes as name-value pairs (e.g., {"name": "color", "value": "red"})
 
 8. ADVANCED RECOGNITION:
    - Handle handwritten text when possible
@@ -579,7 +589,13 @@ OUTPUT FORMAT:
       "taxRate": optional numeric value,
       "taxAmount": optional numeric value,
       "discount": optional numeric value,
-      "productSku": "optional product code/SKU"
+      "productSku": "optional product code/SKU",
+      "attributes": [
+        {
+          "name": "attribute name (e.g., color, size, material)",
+          "value": "attribute value (e.g., red, large, cotton)"
+        }
+      ]
     }
   ],
   "tax": numeric value,
@@ -685,13 +701,20 @@ async function processWithAzureOCR(
           description: "Azure OCR extracted item",
           quantity: Math.floor(Math.random() * 5) + 1,
           unitPrice: Math.floor(Math.random() * 100) + 50,
-          totalPrice: Math.floor(Math.random() * 100) + 50
+          totalPrice: Math.floor(Math.random() * 100) + 50,
+          attributes: [
+            { name: "color", value: ["red", "blue", "green", "black"][Math.floor(Math.random() * 4)] },
+            { name: "size", value: ["small", "medium", "large", "x-large"][Math.floor(Math.random() * 4)] }
+          ]
         },
         {
           description: "Secondary service",
           quantity: Math.floor(Math.random() * 3) + 1,
           unitPrice: Math.floor(Math.random() * 50) + 20,
-          totalPrice: Math.floor(Math.random() * 50) + 20
+          totalPrice: Math.floor(Math.random() * 50) + 20,
+          attributes: [
+            { name: "material", value: ["cotton", "polyester", "wool", "silk"][Math.floor(Math.random() * 4)] }
+          ]
         }
       ],
       tax: Math.floor(Math.random() * 20) + 5,
@@ -745,7 +768,11 @@ async function simulateFallbackOCR(
           description: "Software license",
           quantity: Math.floor(Math.random() * 5) + 1,
           unitPrice: Math.floor(Math.random() * 100) + 50,
-          totalPrice: Math.floor(Math.random() * 100) + 50
+          totalPrice: Math.floor(Math.random() * 100) + 50,
+          attributes: [
+            { name: "license_type", value: ["standard", "premium", "enterprise", "basic"][Math.floor(Math.random() * 4)] },
+            { name: "duration", value: ["1 month", "3 months", "6 months", "1 year"][Math.floor(Math.random() * 4)] }
+          ]
         }
       ],
       tax: Math.floor(Math.random() * 20) + 5,
@@ -933,4 +960,4 @@ ${text}`;
     console.error("Error detecting language:", error);
     return "en";
   }
-} 
+}            

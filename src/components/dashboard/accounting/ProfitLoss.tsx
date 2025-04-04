@@ -25,30 +25,76 @@ export type ProfitLossCategory = {
 };
 
 export type ProfitLossData = {
-  revenues: ProfitLossCategory[];
-  expenses: ProfitLossCategory[];
   totalRevenue: number;
   totalExpenses: number;
   netIncome: number;
-  periodComparison: {
-    current: { month: string; revenue: number; expenses: number; profit: number };
-    previous: { month: string; revenue: number; expenses: number; profit: number };
-    changePercent: number;
-  };
+  revenueCategories?: { name: string; value: number; }[];
+  expenseCategories?: { name: string; value: number; }[];
   monthlyData: {
     month: string;
     revenue: number;
     expenses: number;
     profit: number;
   }[];
+  period?: string;
+  startDate?: Date;
+  endDate?: Date;
+  previousPeriod?: {
+    totalRevenue: number;
+    totalExpenses: number;
+    netIncome: number;
+  };
+  changes?: {
+    revenueChange: number;
+    expensesChange: number;
+    netIncomeChange: number;
+  };
 };
 
 interface ProfitLossProps {
-  data: ProfitLossData;
+  data?: ProfitLossData;
   period: "month" | "quarter" | "year";
 }
 
-const ProfitLoss = ({ data, period }: ProfitLossProps) => {
+const ProfitLoss: React.FC<ProfitLossProps> = ({ data, period }) => {
+  const defaultData: ProfitLossData = {
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netIncome: 0,
+    revenueCategories: [],
+    expenseCategories: [],
+    monthlyData: [],
+    previousPeriod: {
+      totalRevenue: 0,
+      totalExpenses: 0,
+      netIncome: 0
+    },
+    changes: {
+      revenueChange: 0,
+      expensesChange: 0,
+      netIncomeChange: 0
+    }
+  };
+  
+  const safeData: ProfitLossData = {
+    totalRevenue: data?.totalRevenue || defaultData.totalRevenue,
+    totalExpenses: data?.totalExpenses || defaultData.totalExpenses,
+    netIncome: data?.netIncome || defaultData.netIncome,
+    revenueCategories: data?.revenueCategories || defaultData.revenueCategories,
+    expenseCategories: data?.expenseCategories || defaultData.expenseCategories,
+    monthlyData: data?.monthlyData || defaultData.monthlyData,
+    previousPeriod: {
+      totalRevenue: data?.previousPeriod?.totalRevenue || defaultData.previousPeriod?.totalRevenue || 0,
+      totalExpenses: data?.previousPeriod?.totalExpenses || defaultData.previousPeriod?.totalExpenses || 0,
+      netIncome: data?.previousPeriod?.netIncome || defaultData.previousPeriod?.netIncome || 0
+    },
+    changes: {
+      revenueChange: data?.changes?.revenueChange || defaultData.changes?.revenueChange || 0,
+      expensesChange: data?.changes?.expensesChange || defaultData.changes?.expensesChange || 0,
+      netIncomeChange: data?.changes?.netIncomeChange || defaultData.changes?.netIncomeChange || 0
+    }
+  };
+  
   const periodLabel = {
     month: "Monthly",
     quarter: "Quarterly",
@@ -60,13 +106,13 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Profit & Loss Statement</CardTitle>
+            <CardTitle>Profit &amp; Loss Statement</CardTitle>
             <CardDescription>{periodLabel} overview of revenues and expenses</CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm">
               <Calendar className="mr-2 h-4 w-4" />
-              {data.periodComparison.current.month}
+              {new Date().toLocaleString('default', { month: 'long' })}
             </Button>
             <Button variant="outline" size="sm">
               <Download className="mr-2 h-4 w-4" />
@@ -90,10 +136,10 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                   <CardTitle className="text-lg">Total Revenue</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-green-600">${data.totalRevenue.toFixed(2)}</div>
+                  <div className="text-2xl font-bold text-green-600">${safeData.totalRevenue.toFixed(2)}</div>
                   <p className="text-sm text-muted-foreground">
-                    {data.periodComparison.changePercent >= 0 ? "+" : ""}
-                    {data.periodComparison.changePercent.toFixed(1)}% from previous period
+                    {(safeData.changes?.revenueChange || 0) >= 0 ? "+" : ""}
+                    {Math.abs(safeData.changes?.revenueChange || 0).toFixed(1)}% from previous period
                   </p>
                 </CardContent>
               </Card>
@@ -103,11 +149,10 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                   <CardTitle className="text-lg">Total Expenses</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-red-600">${data.totalExpenses.toFixed(2)}</div>
+                  <div className="text-2xl font-bold text-red-600">${safeData.totalExpenses.toFixed(2)}</div>
                   <p className="text-sm text-muted-foreground">
-                    {data.periodComparison.current.expenses < data.periodComparison.previous.expenses ? "-" : "+"}
-                    {Math.abs(((data.periodComparison.current.expenses - data.periodComparison.previous.expenses) / 
-                      data.periodComparison.previous.expenses) * 100).toFixed(1)}% from previous period
+                    {(safeData.changes?.expensesChange || 0) < 0 ? "-" : "+"}
+                    {Math.abs(safeData.changes?.expensesChange || 0).toFixed(1)}% from previous period
                   </p>
                 </CardContent>
               </Card>
@@ -117,11 +162,11 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                   <CardTitle className="text-lg">Net Income</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className={`text-2xl font-bold ${data.netIncome >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    ${data.netIncome.toFixed(2)}
+                  <div className={`text-2xl font-bold ${safeData.netIncome >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    ${safeData.netIncome.toFixed(2)}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {((data.netIncome / data.totalRevenue) * 100).toFixed(1)}% profit margin
+                    {((safeData.netIncome / Math.max(safeData.totalRevenue, 1)) * 100).toFixed(1)}% profit margin
                   </p>
                 </CardContent>
               </Card>
@@ -129,7 +174,7 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
             
             <div className="mt-6">
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={data.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <BarChart data={safeData.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
@@ -157,18 +202,18 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.revenues.map((item) => (
-                        <TableRow key={item.id}>
+                      {safeData.revenueCategories?.map((item) => (
+                        <TableRow key={item.name}>
                           <TableCell>{item.name}</TableCell>
-                          <TableCell className="text-right">${item.amount.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">${item.value.toFixed(2)}</TableCell>
                           <TableCell className="text-right">
-                            {((item.amount / data.totalRevenue) * 100).toFixed(1)}%
+                            {((item.value / Math.max(safeData.totalRevenue, 1)) * 100).toFixed(1)}%
                           </TableCell>
                         </TableRow>
                       ))}
                       <TableRow className="font-medium">
                         <TableCell>Total Revenue</TableCell>
-                        <TableCell className="text-right">${data.totalRevenue.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${safeData.totalRevenue.toFixed(2)}</TableCell>
                         <TableCell className="text-right">100%</TableCell>
                       </TableRow>
                     </TableBody>
@@ -188,18 +233,18 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.expenses.map((item) => (
-                        <TableRow key={item.id}>
+                      {safeData.expenseCategories?.map((item) => (
+                        <TableRow key={item.name}>
                           <TableCell>{item.name}</TableCell>
-                          <TableCell className="text-right">${item.amount.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">${item.value.toFixed(2)}</TableCell>
                           <TableCell className="text-right">
-                            {((item.amount / data.totalExpenses) * 100).toFixed(1)}%
+                            {((item.value / Math.max(safeData.totalExpenses, 1)) * 100).toFixed(1)}%
                           </TableCell>
                         </TableRow>
                       ))}
                       <TableRow className="font-medium">
                         <TableCell>Total Expenses</TableCell>
-                        <TableCell className="text-right">${data.totalExpenses.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${safeData.totalExpenses.toFixed(2)}</TableCell>
                         <TableCell className="text-right">100%</TableCell>
                       </TableRow>
                     </TableBody>
@@ -210,8 +255,8 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
               <div className="pt-4 border-t">
                 <div className="flex justify-between items-center font-medium text-lg">
                   <span>Net Income</span>
-                  <span className={data.netIncome >= 0 ? "text-green-600" : "text-red-600"}>
-                    ${data.netIncome.toFixed(2)}
+                  <span className={safeData.netIncome >= 0 ? "text-green-600" : "text-red-600"}>
+                    ${safeData.netIncome.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -221,7 +266,7 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
           <TabsContent value="chart">
             <div className="space-y-6">
               <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={data.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <BarChart data={safeData.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
@@ -241,7 +286,7 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                   <CardContent>
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart 
-                        data={data.revenues} 
+                        data={safeData.revenueCategories || []} 
                         layout="vertical" 
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
@@ -249,7 +294,7 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                         <XAxis type="number" />
                         <YAxis type="category" dataKey="name" width={100} />
                         <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
-                        <Bar dataKey="amount" fill="#10b981" />
+                        <Bar dataKey="value" fill="#10b981" />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -262,7 +307,7 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                   <CardContent>
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart 
-                        data={data.expenses} 
+                        data={safeData.expenseCategories || []} 
                         layout="vertical" 
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
@@ -270,7 +315,7 @@ const ProfitLoss = ({ data, period }: ProfitLossProps) => {
                         <XAxis type="number" />
                         <YAxis type="category" dataKey="name" width={100} />
                         <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
-                        <Bar dataKey="amount" fill="#ef4444" />
+                        <Bar dataKey="value" fill="#ef4444" />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>

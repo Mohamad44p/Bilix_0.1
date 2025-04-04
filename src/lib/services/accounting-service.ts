@@ -223,16 +223,16 @@ export async function detectFraudIssues(invoices: Invoice[]): Promise<FraudDetec
           const invoice2 = group[j];
           
           const daysDiff = Math.abs(
-            (invoice1.date.getTime() - invoice2.date.getTime()) / (1000 * 60 * 60 * 24)
+            ((invoice1.issueDate || invoice1.createdAt).getTime() - (invoice2.issueDate || invoice2.createdAt).getTime()) / (1000 * 60 * 60 * 24)
           );
           
           if (daysDiff < 7) {
             results.push({
               id: `duplicate-${invoice1.id}-${invoice2.id}`,
               invoiceId: invoice1.id,
-              vendorName: invoice1.vendor?.name || 'Unknown Vendor',
-              amount: Number(invoice1.amount),
-              date: invoice1.date,
+              vendorName: invoice1.vendorName || 'Unknown Vendor',
+              amount: Number(invoice1.amount || 0),
+              date: invoice1.issueDate || invoice1.createdAt,
               issueType: 'duplicate',
               severity: 'high',
               description: `Potential duplicate invoice detected. Invoice ${invoice1.invoiceNumber || invoice1.id} and ${invoice2.invoiceNumber || invoice2.id} have the same amount and vendor, and are only ${daysDiff.toFixed(1)} days apart.`,
@@ -259,9 +259,9 @@ export async function detectFraudIssues(invoices: Invoice[]): Promise<FraudDetec
       results.push({
         id: `anomaly-${invoice.id}`,
         invoiceId: invoice.id,
-        vendorName: invoice.vendor?.name || 'Unknown Vendor',
+        vendorName: invoice.vendorName || 'Unknown Vendor',
         amount: amount,
-        date: invoice.date,
+        date: invoice.issueDate || invoice.createdAt,
         issueType: 'anomaly',
         severity: 'medium',
         description: `Unusually ${amount > mean ? 'high' : 'low'} invoice amount detected. This amount is ${zScore.toFixed(1)} standard deviations from the mean.`,
@@ -285,7 +285,7 @@ export async function assessFinancialRisks(invoices: Invoice[]): Promise<Financi
   let totalSpend = 0;
   
   invoices.forEach(invoice => {
-    if (invoice.type === 'PURCHASE') {
+    if (invoice.invoiceType === 'PURCHASE') {
       const amount = Number(invoice.amount);
       totalSpend += amount;
       
@@ -298,12 +298,12 @@ export async function assessFinancialRisks(invoices: Invoice[]): Promise<Financi
     const percentage = (amount / totalSpend) * 100;
     
     if (percentage > 25) {
-      const vendor = invoices.find(i => i.vendorId === vendorId)?.vendor;
+      const vendorName = invoices.find(i => i.vendorId === vendorId)?.vendorName;
       
       risks.push({
         id: `vendor-concentration-${vendorId}`,
         category: 'Vendor Concentration',
-        description: `${vendor?.name || 'Unknown vendor'} accounts for ${percentage.toFixed(1)}% of total expenses.`,
+        description: `${vendorName || 'Unknown vendor'} accounts for ${percentage.toFixed(1)}% of total expenses.`,
         impact: 'medium',
         probability: 'high',
         mitigation: 'Consider diversifying suppliers to reduce dependency on a single vendor.'
@@ -312,7 +312,7 @@ export async function assessFinancialRisks(invoices: Invoice[]): Promise<Financi
   });
   
   const cashFlow = invoices.reduce((sum, invoice) => {
-    return sum + (invoice.type === 'PAYMENT' ? Number(invoice.amount) : -Number(invoice.amount));
+    return sum + (invoice.invoiceType === 'PAYMENT' ? Number(invoice.amount || 0) : -Number(invoice.amount || 0));
   }, 0);
   
   if (cashFlow < 0) {
@@ -327,7 +327,7 @@ export async function assessFinancialRisks(invoices: Invoice[]): Promise<Financi
   }
   
   const overdueReceivables = invoices.filter(
-    invoice => invoice.type === 'PAYMENT' && invoice.status === 'OVERDUE'
+    invoice => invoice.invoiceType === 'PAYMENT' && invoice.status === 'OVERDUE'
   );
   
   const overdueTotal = overdueReceivables.reduce(
@@ -356,12 +356,12 @@ export async function calculateTaxLiabilities(invoices: Invoice[]): Promise<TaxL
   const liabilities: TaxLiability[] = [];
   
   const totalRevenue = invoices
-    .filter(invoice => invoice.type === 'PAYMENT')
-    .reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+    .filter(invoice => invoice.invoiceType === 'PAYMENT')
+    .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   
   const totalExpenses = invoices
-    .filter(invoice => invoice.type === 'PURCHASE')
-    .reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+    .filter(invoice => invoice.invoiceType === 'PURCHASE')
+    .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   
   const estimatedProfit = totalRevenue - totalExpenses;
   const estimatedIncomeTax = estimatedProfit > 0 ? estimatedProfit * 0.21 : 0; // Simplified corporate tax rate
@@ -509,22 +509,22 @@ export async function generateAiSummary(
   taxLiabilities: TaxLiability[]
 ): Promise<string> {
   const totalRevenue = invoices
-    .filter(invoice => invoice.type === 'PAYMENT')
-    .reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+    .filter(invoice => invoice.invoiceType === 'PAYMENT')
+    .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   
   const totalExpenses = invoices
-    .filter(invoice => invoice.type === 'PURCHASE')
-    .reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+    .filter(invoice => invoice.invoiceType === 'PURCHASE')
+    .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   
   const netIncome = totalRevenue - totalExpenses;
   
   const overdueReceivables = invoices
-    .filter(invoice => invoice.type === 'PAYMENT' && invoice.status === 'OVERDUE')
-    .reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+    .filter(invoice => invoice.invoiceType === 'PAYMENT' && invoice.status === 'OVERDUE')
+    .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   
   const pendingPayables = invoices
-    .filter(invoice => invoice.type === 'PURCHASE' && invoice.status === 'PENDING')
-    .reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+    .filter(invoice => invoice.invoiceType === 'PURCHASE' && invoice.status === 'PENDING')
+    .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   
   
   let summary = `Financial Summary:\n\n`;

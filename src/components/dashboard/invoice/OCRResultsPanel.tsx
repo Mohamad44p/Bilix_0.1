@@ -397,7 +397,7 @@ export default function OCRResultsPanel({
               </Tooltip>
             </TooltipProvider>
             
-            <Badge variant={editedData.invoiceType === 'PAYMENT' ? 'success' : 'secondary'} className="flex items-center gap-1">
+            <Badge variant={editedData.invoiceType === 'PAYMENT' ? 'default' : 'secondary'} className="flex items-center gap-1">
               {invoiceTypeInfo.icon}
               <span className="ml-1">{editedData.invoiceType === 'PAYMENT' ? 'Payment' : 'Purchase'}</span>
             </Badge>
@@ -674,16 +674,153 @@ export default function OCRResultsPanel({
                     <TableRow key={index}>
                       <TableCell>
                         {isEditingData ? (
-                          <Input
-                            value={item.description}
-                            onChange={(e) => {
-                              const updatedItems = [...(editedData.items || [])];
-                              updatedItems[index] = { ...updatedItems[index], description: e.target.value };
-                              handleEditField("items", updatedItems);
-                            }}
-                          />
+                          <div className="space-y-2">
+                            <Input
+                              value={item.description}
+                              onChange={(e) => {
+                                const updatedItems = [...(editedData.items || [])];
+                                updatedItems[index] = { ...updatedItems[index], description: e.target.value };
+                                handleEditField("items", updatedItems);
+                              }}
+                            />
+                            {/* Attributes button in edit mode */}
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="mt-1"
+                              onClick={() => {
+                                const dialog = document.getElementById(`attributes-dialog-${index}`) as HTMLDialogElement;
+                                if (dialog) dialog.showModal();
+                              }}
+                            >
+                              <Tag className="h-3 w-3 mr-1" />
+                              {item.attributes && item.attributes.length > 0 
+                                ? `Edit ${item.attributes.length} attributes` 
+                                : "Add attributes"}
+                            </Button>
+                            
+                            {/* Attributes dialog */}
+                            <dialog id={`attributes-dialog-${index}`} className="p-0 rounded-lg shadow-lg backdrop:bg-black/50">
+                              <div className="w-[500px] p-4">
+                                <div className="flex items-center justify-between mb-4">
+                                  <h3 className="text-lg font-medium">Item Attributes</h3>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    onClick={() => {
+                                      const dialog = document.getElementById(`attributes-dialog-${index}`) as HTMLDialogElement;
+                                      if (dialog) dialog.close();
+                                    }}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                
+                                <div className="space-y-4 max-h-[400px] overflow-y-auto">
+                                  {item.attributes && item.attributes.length > 0 ? (
+                                    item.attributes.map((attr, attrIndex) => (
+                                      <div key={attrIndex} className="flex items-center gap-2">
+                                        <Input
+                                          value={attr.name}
+                                          onChange={(e) => {
+                                            const updatedItems = [...(editedData.items || [])];
+                                            const updatedAttributes = [...(updatedItems[index].attributes || [])];
+                                            updatedAttributes[attrIndex] = { 
+                                              ...updatedAttributes[attrIndex], 
+                                              name: e.target.value 
+                                            };
+                                            updatedItems[index] = { 
+                                              ...updatedItems[index], 
+                                              attributes: updatedAttributes 
+                                            };
+                                            handleEditField("items", updatedItems);
+                                          }}
+                                          placeholder="Attribute name"
+                                          className="w-1/2"
+                                        />
+                                        <Input
+                                          value={attr.value}
+                                          onChange={(e) => {
+                                            const updatedItems = [...(editedData.items || [])];
+                                            const updatedAttributes = [...(updatedItems[index].attributes || [])];
+                                            updatedAttributes[attrIndex] = { 
+                                              ...updatedAttributes[attrIndex], 
+                                              value: e.target.value 
+                                            };
+                                            updatedItems[index] = { 
+                                              ...updatedItems[index], 
+                                              attributes: updatedAttributes 
+                                            };
+                                            handleEditField("items", updatedItems);
+                                          }}
+                                          placeholder="Attribute value"
+                                          className="w-1/2"
+                                        />
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          onClick={() => {
+                                            const updatedItems = [...(editedData.items || [])];
+                                            const updatedAttributes = (updatedItems[index].attributes || [])
+                                              .filter((_, i) => i !== attrIndex);
+                                            updatedItems[index] = { 
+                                              ...updatedItems[index], 
+                                              attributes: updatedAttributes 
+                                            };
+                                            handleEditField("items", updatedItems);
+                                          }}
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No attributes added yet.</p>
+                                  )}
+                                </div>
+                                
+                                <div className="mt-4 flex justify-between">
+                                  <Button 
+                                    variant="outline" 
+                                    onClick={() => {
+                                      const updatedItems = [...(editedData.items || [])];
+                                      const currentAttributes = updatedItems[index].attributes || [];
+                                      updatedItems[index] = { 
+                                        ...updatedItems[index], 
+                                        attributes: [...currentAttributes, { name: "", value: "" }] 
+                                      };
+                                      handleEditField("items", updatedItems);
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Attribute
+                                  </Button>
+                                  
+                                  <Button 
+                                    onClick={() => {
+                                      const dialog = document.getElementById(`attributes-dialog-${index}`) as HTMLDialogElement;
+                                      if (dialog) dialog.close();
+                                    }}
+                                  >
+                                    Done
+                                  </Button>
+                                </div>
+                              </div>
+                            </dialog>
+                          </div>
                         ) : (
-                          item.description
+                          <div className="flex items-center">
+                            <span>{item.description}</span>
+                            {item.attributes && item.attributes.length > 0 && (
+                              <div className="ml-2 flex flex-wrap gap-1">
+                                {item.attributes.map((attr, attrIndex) => (
+                                  <Badge key={attrIndex} variant="outline" className="text-xs">
+                                    {attr.name}: {attr.value}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
@@ -1122,4 +1259,4 @@ export default function OCRResultsPanel({
       )}
     </Card>
   );
-} 
+}          
