@@ -47,7 +47,7 @@ export async function getGeneralLedger() {
       },
     });
     
-    const ledgerEntries = invoices.map((invoice) => {
+    const ledgerEntries = invoices.map((invoice: any) => {
       const isPayment = invoice.invoiceType === "PAYMENT";
       
       return {
@@ -123,7 +123,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     let totalRevenue = 0;
     let totalExpenses = 0;
     
-    invoices.forEach((invoice) => {
+    invoices.forEach((invoice: any) => {
       const amount = Number(invoice.amount || 0);
       
       if (invoice.invoiceType === "PAYMENT") {
@@ -149,7 +149,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       const monthName = monthDate.toLocaleString('default', { month: 'short' });
       const monthYear = monthDate.getFullYear();
       
-      const monthInvoices = invoices.filter((invoice) => {
+      const monthInvoices = invoices.filter((invoice: any) => {
         if (!invoice.issueDate) return false;
         const invoiceDate = new Date(invoice.issueDate);
         return invoiceDate.getMonth() === monthDate.getMonth() && 
@@ -159,7 +159,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       let monthRevenue = 0;
       let monthExpenses = 0;
       
-      monthInvoices.forEach((invoice) => {
+      monthInvoices.forEach((invoice: any) => {
         const amount = Number(invoice.amount || 0);
         if (invoice.invoiceType === "PAYMENT") {
           monthRevenue += amount;
@@ -209,7 +209,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     let previousRevenue = 0;
     let previousExpenses = 0;
     
-    previousInvoices.forEach((invoice) => {
+    previousInvoices.forEach((invoice: any) => {
       const amount = Number(invoice.amount || 0);
       if (invoice.invoiceType === "PAYMENT") {
         previousRevenue += amount;
@@ -278,7 +278,7 @@ export async function getBalanceSheet() {
       },
     });
     
-    const cashAndEquivalents = invoices.reduce((total, invoice) => {
+    const cashAndEquivalents = invoices.reduce((total: number, invoice: any) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status === "PAID") {
         return total + Number(invoice.amount || 0);
       } else if (invoice.invoiceType === "PURCHASE" && invoice.status === "PAID") {
@@ -287,7 +287,7 @@ export async function getBalanceSheet() {
       return total;
     }, 0);
     
-    const accountsReceivable = invoices.reduce((total, invoice) => {
+    const accountsReceivable = invoices.reduce((total: number, invoice: any) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -302,7 +302,7 @@ export async function getBalanceSheet() {
     const fixedAssets = 0; // Would need additional data for fixed assets
     const totalAssets = totalCurrentAssets + fixedAssets;
     
-    const accountsPayable = invoices.reduce((total, invoice) => {
+    const accountsPayable = invoices.reduce((total: number, invoice: any) => {
       if (invoice.invoiceType === "PURCHASE" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -331,7 +331,7 @@ export async function getBalanceSheet() {
       },
     });
     
-    const previousCashAndEquivalents = previousInvoices.reduce((total, invoice) => {
+    const previousCashAndEquivalents = previousInvoices.reduce((total: number, invoice: any) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status === "PAID") {
         return total + Number(invoice.amount || 0);
       } else if (invoice.invoiceType === "PURCHASE" && invoice.status === "PAID") {
@@ -340,7 +340,7 @@ export async function getBalanceSheet() {
       return total;
     }, 0);
     
-    const previousAccountsReceivable = previousInvoices.reduce((total, invoice) => {
+    const previousAccountsReceivable = previousInvoices.reduce((total: number, invoice: any) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -349,7 +349,7 @@ export async function getBalanceSheet() {
     
     const previousTotalCurrentAssets = previousCashAndEquivalents + previousAccountsReceivable;
     
-    const previousAccountsPayable = previousInvoices.reduce((total, invoice) => {
+    const previousAccountsPayable = previousInvoices.reduce((total: number, invoice: any) => {
       if (invoice.invoiceType === "PURCHASE" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -452,7 +452,7 @@ export async function getTrialBalance() {
     ];
     
     const categories = new Set<string>();
-    invoices.forEach((invoice) => {
+    invoices.forEach((invoice: any) => {
       if (invoice.invoiceType === "PURCHASE" && invoice.category?.name) {
         categories.add(invoice.category.name);
       }
@@ -471,7 +471,7 @@ export async function getTrialBalance() {
       accountNumber += 100;
     });
     
-    invoices.forEach((invoice) => {
+    invoices.forEach((invoice: any) => {
       const amount = Number(invoice.amount || 0);
       
       if (invoice.invoiceType === "PAYMENT") {
@@ -567,7 +567,7 @@ export async function getCashFlowProjection(period: "30days" | "60days" | "90day
       },
     });
     
-    const currentBalance = invoices.reduce((total, invoice) => {
+    const currentBalance = invoices.reduce((total: number, invoice: any) => {
       if (invoice.status === "PAID") {
         if (invoice.invoiceType === "PAYMENT") {
           return total + Number(invoice.amount || 0);
@@ -602,7 +602,7 @@ export async function getCashFlowProjection(period: "30days" | "60days" | "90day
       const date = new Date(now);
       date.setDate(now.getDate() + i);
       
-      const dueInvoices = invoices.filter((invoice) => {
+      const dueInvoices = invoices.filter((invoice: any) => {
         if (!invoice.dueDate) return false;
         const dueDate = new Date(invoice.dueDate);
         return dueDate.toDateString() === date.toDateString() && invoice.status !== "PAID";
@@ -611,7 +611,7 @@ export async function getCashFlowProjection(period: "30days" | "60days" | "90day
       const inflowSources: SourceItem[] = [];
       const outflowSources: SourceItem[] = [];
       
-      dueInvoices.forEach((invoice) => {
+      dueInvoices.forEach((invoice: any) => {
         const amount = Number(invoice.amount || 0);
         const probability = calculatePaymentProbability(invoice);
         

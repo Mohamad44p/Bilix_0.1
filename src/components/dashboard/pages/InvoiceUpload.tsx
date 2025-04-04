@@ -138,7 +138,7 @@ const InvoiceUpload = () => {
         ]);
         
         // Transform data to match the expected types
-        const transformedCategories: Category[] = categoriesData.map((cat) => ({
+        const transformedCategories: Category[] = categoriesData.map((cat: any) => ({
           id: cat.id,
           name: cat.name,
           description: cat.description || undefined,
@@ -146,7 +146,7 @@ const InvoiceUpload = () => {
           icon: cat.icon || undefined
         }));
         
-        const transformedVendors: Vendor[] = vendorsData.map((vendor) => ({
+        const transformedVendors: Vendor[] = vendorsData.map((vendor: any) => ({
           id: vendor.id,
           name: vendor.name,
           email: vendor.email || undefined,
@@ -428,7 +428,7 @@ const InvoiceUpload = () => {
       ]);
 
       // Transform data to match the expected types
-      const transformedCategories: Category[] = categoriesData.map((cat) => ({
+      const transformedCategories: Category[] = categoriesData.map((cat: any) => ({
         id: cat.id,
         name: cat.name,
         description: cat.description || undefined,
@@ -436,7 +436,7 @@ const InvoiceUpload = () => {
         icon: cat.icon || undefined
       }));
       
-      const transformedVendors: Vendor[] = vendorsData.map((vendor) => ({
+      const transformedVendors: Vendor[] = vendorsData.map((vendor: any) => ({
         id: vendor.id,
         name: vendor.name,
         email: vendor.email || undefined,
