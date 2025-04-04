@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -46,7 +46,9 @@ import {
   Info,
   ArrowDownCircle,
   ArrowUpCircle,
-  RefreshCw
+  RefreshCw,
+  ThumbsUp,
+  Brain
 } from "lucide-react";
 import { ExtractedInvoiceData, Category, Vendor, InvoiceLineItem, InvoiceType } from "@/lib/types";
 import { updateInvoiceCategory, updateInvoiceVendor } from "@/lib/actions/invoice";
@@ -60,6 +62,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 import * as invoiceService from "@/lib/services/invoice-service";
 import { Textarea } from "@/components/ui/textarea";
+import { 
+  storeExtractionFeedback, 
+  storeCategoryFeedback, 
+  storeVendorFeedback,
+  storeAttributeFeedback 
+} from "@/lib/services/ai-learning-service";
+import { useAuth } from "@clerk/nextjs";
 
 interface OCRResultsPanelProps {
   invoiceId: string;
@@ -1272,4 +1281,4 @@ export default function OCRResultsPanel({
       )}
     </Card>
   );
-}                                        
+}                                                            
