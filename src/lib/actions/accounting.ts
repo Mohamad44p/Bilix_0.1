@@ -2,7 +2,7 @@
 
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
-import { revalidatePath } from "next/cache";
+// import { revalidatePath } from "next/cache";
 import { OpenAI } from "openai";
 import { 
   calculatePaymentProbability,
@@ -15,9 +15,33 @@ import {
 } from "@/lib/services/accounting-service";
 import { TrialBalanceAccount } from "@/components/dashboard/accounting/TrialBalance";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+}
+
+interface Invoice {
+  id: string;
+  invoiceType: "PAYMENT" | "PURCHASE";
+  status: string;
+  amount: number | string;
+  issueDate?: Date;
+  createdAt: Date;
+  title?: string;
+  invoiceNumber?: string;
+  vendor?: Vendor;
+  vendorName?: string;
+  category?: Category;
+}
+
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
 
 /**
  * Get general ledger entries
@@ -47,7 +71,7 @@ export async function getGeneralLedger() {
       },
     });
     
-    const ledgerEntries = invoices.map((invoice: any) => {
+    const ledgerEntries = invoices.map((invoice: Invoice) => {
       const isPayment = invoice.invoiceType === "PAYMENT";
       
       return {
@@ -123,7 +147,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     let totalRevenue = 0;
     let totalExpenses = 0;
     
-    invoices.forEach((invoice: any) => {
+    invoices.forEach((invoice: Invoice) => {
       const amount = Number(invoice.amount || 0);
       
       if (invoice.invoiceType === "PAYMENT") {
@@ -149,7 +173,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       const monthName = monthDate.toLocaleString('default', { month: 'short' });
       const monthYear = monthDate.getFullYear();
       
-      const monthInvoices = invoices.filter((invoice: any) => {
+      const monthInvoices = invoices.filter((invoice: Invoice) => {
         if (!invoice.issueDate) return false;
         const invoiceDate = new Date(invoice.issueDate);
         return invoiceDate.getMonth() === monthDate.getMonth() && 
@@ -159,7 +183,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       let monthRevenue = 0;
       let monthExpenses = 0;
       
-      monthInvoices.forEach((invoice: any) => {
+      monthInvoices.forEach((invoice: Invoice) => {
         const amount = Number(invoice.amount || 0);
         if (invoice.invoiceType === "PAYMENT") {
           monthRevenue += amount;
@@ -209,7 +233,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
     let previousRevenue = 0;
     let previousExpenses = 0;
     
-    previousInvoices.forEach((invoice: any) => {
+    previousInvoices.forEach((invoice: Invoice) => {
       const amount = Number(invoice.amount || 0);
       if (invoice.invoiceType === "PAYMENT") {
         previousRevenue += amount;
@@ -278,7 +302,7 @@ export async function getBalanceSheet() {
       },
     });
     
-    const cashAndEquivalents = invoices.reduce((total: number, invoice: any) => {
+    const cashAndEquivalents = invoices.reduce((total: number, invoice: Invoice) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status === "PAID") {
         return total + Number(invoice.amount || 0);
       } else if (invoice.invoiceType === "PURCHASE" && invoice.status === "PAID") {
@@ -287,7 +311,7 @@ export async function getBalanceSheet() {
       return total;
     }, 0);
     
-    const accountsReceivable = invoices.reduce((total: number, invoice: any) => {
+    const accountsReceivable = invoices.reduce((total: number, invoice: Invoice) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -302,7 +326,7 @@ export async function getBalanceSheet() {
     const fixedAssets = 0; // Would need additional data for fixed assets
     const totalAssets = totalCurrentAssets + fixedAssets;
     
-    const accountsPayable = invoices.reduce((total: number, invoice: any) => {
+    const accountsPayable = invoices.reduce((total: number, invoice: Invoice) => {
       if (invoice.invoiceType === "PURCHASE" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -331,7 +355,7 @@ export async function getBalanceSheet() {
       },
     });
     
-    const previousCashAndEquivalents = previousInvoices.reduce((total: number, invoice: any) => {
+    const previousCashAndEquivalents = previousInvoices.reduce((total: number, invoice: Invoice) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status === "PAID") {
         return total + Number(invoice.amount || 0);
       } else if (invoice.invoiceType === "PURCHASE" && invoice.status === "PAID") {
@@ -340,7 +364,7 @@ export async function getBalanceSheet() {
       return total;
     }, 0);
     
-    const previousAccountsReceivable = previousInvoices.reduce((total: number, invoice: any) => {
+    const previousAccountsReceivable = previousInvoices.reduce((total: number, invoice: Invoice) => {
       if (invoice.invoiceType === "PAYMENT" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -349,7 +373,7 @@ export async function getBalanceSheet() {
     
     const previousTotalCurrentAssets = previousCashAndEquivalents + previousAccountsReceivable;
     
-    const previousAccountsPayable = previousInvoices.reduce((total: number, invoice: any) => {
+    const previousAccountsPayable = previousInvoices.reduce((total: number, invoice: Invoice) => {
       if (invoice.invoiceType === "PURCHASE" && invoice.status !== "PAID") {
         return total + Number(invoice.amount || 0);
       }
@@ -452,7 +476,7 @@ export async function getTrialBalance() {
     ];
     
     const categories = new Set<string>();
-    invoices.forEach((invoice: any) => {
+    invoices.forEach((invoice: Invoice) => {
       if (invoice.invoiceType === "PURCHASE" && invoice.category?.name) {
         categories.add(invoice.category.name);
       }
