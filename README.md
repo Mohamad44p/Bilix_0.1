@@ -1,6 +1,6 @@
 # AI-Powered Invoice Management System
 
-This project is an AI-powered invoice processing and financial analysis tool built with Next.js, Prisma, PostgreSQL, and Clerk.
+This project is an AI-powered invoice processing and financial analysis tool built with Next.js, Prisma, PostgreSQL, and Clerk. It helps businesses efficiently manage their invoices.
 
 ## Setup Instructions
 
