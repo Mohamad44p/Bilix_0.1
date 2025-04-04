@@ -266,6 +266,7 @@ export default function OCRResultsPanel({
       
       // Prepare line items data to save separately
       const lineItems = editedData.items || [];
+      const invoiceType = editedData.invoiceType as InvoiceType;
       
       // In a real application, this would update the invoice with manually corrected data
       await invoiceService.updateInvoice(invoiceId, {
@@ -276,7 +277,7 @@ export default function OCRResultsPanel({
         amount: editedData.amount,
         currency: editedData.currency,
         notes: editedData.notes,
-        invoiceType: editedData.invoiceType as InvoiceType,
+        invoiceType: invoiceType,
         extractedData: editedData
       });
       
@@ -285,6 +286,18 @@ export default function OCRResultsPanel({
         await Promise.all(lineItems.map((item: InvoiceLineItem) => 
           invoiceService.saveInvoiceLineItem(invoiceId, item)
         ));
+        
+        try {
+          await invoiceService.updateInventory(invoiceId, invoiceType, lineItems);
+          console.log(`Inventory updated for invoice ${invoiceId} (${invoiceType})`);
+        } catch (inventoryError) {
+          console.error("Error updating inventory:", inventoryError);
+          toast({
+            title: "Warning",
+            description: "Invoice saved but inventory update failed",
+            variant: "destructive",
+          });
+        }
       }
       
       toast({
@@ -1259,4 +1272,4 @@ export default function OCRResultsPanel({
       )}
     </Card>
   );
-}          
+}                                        

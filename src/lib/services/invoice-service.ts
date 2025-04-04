@@ -7,6 +7,7 @@ const ENDPOINTS = {
   TAGS: '/api/invoices/tags',
   BATCH: '/api/invoices/batch',
   LINE_ITEMS: '/api/invoices/line-items',
+  INVENTORY: '/api/invoices/inventory',
 };
 
 // Get all invoices with optional filtering
@@ -311,4 +312,36 @@ export async function deleteInvoiceLineItem(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete line item with ID: ${id}`);
   }
-}  
+}
+
+export async function updateInventory(
+  invoiceId: string, 
+  invoiceType: InvoiceType,
+  lineItems: InvoiceLineItem[]
+): Promise<void> {
+  const response = await fetch(ENDPOINTS.INVENTORY, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      invoiceId,
+      invoiceType,
+      lineItems
+    }),
+  });
+  
+  if (!response.ok) {
+    let errorMessage = `Failed to update inventory for invoice ID: ${invoiceId}`;
+    try {
+      const errorData = await response.json();
+      if (errorData?.error) {
+        errorMessage += `: ${errorData.error}`;
+      }
+    } catch (parseError) {
+      errorMessage += `: ${response.status} ${response.statusText}`;
+    }
+    
+    throw new Error(errorMessage);
+  }
+}    

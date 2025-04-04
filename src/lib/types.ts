@@ -144,4 +144,48 @@ export interface OnboardingData {
     invoiceVolume: 'low' | 'medium' | 'high';
   };
   aiSettings: AISettings;
-}  
+}
+
+export interface InventoryItem {
+  id: string;
+  productName: string;
+  description?: string;
+  sku?: string;
+  currentQuantity: number;
+  unitOfMeasure?: string;
+  category?: string;
+  lastUpdated: Date;
+  createdAt: Date;
+  attributes?: InventoryAttribute[];
+}
+
+export interface InventoryAttribute {
+  id: string;
+  name: string;
+  value: string;
+  inventoryId: string;
+}
+
+export interface InventoryHistory {
+  id: string;
+  inventoryId: string;
+  previousQuantity: number;
+  newQuantity: number;
+  changeReason: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'RETURN';
+  invoiceId?: string;
+  timestamp: Date;
+  notes?: string;
+}
+
+export interface AIFeedbackData {
+  id: string;
+  userId: string;
+  invoiceId: string;
+  field: string;
+  originalValue: string;
+  correctedValue: string;
+  vendorName?: string;
+  confidence: number;
+  feedbackType: 'EXTRACTION' | 'CATEGORY' | 'VENDOR' | 'ATTRIBUTE';
+  timestamp: Date;
+}          

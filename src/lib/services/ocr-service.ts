@@ -558,8 +558,9 @@ DETAILED INSTRUCTIONS:
    - Scan tables carefully for this information
    - Preserve exact descriptions and quantities
    - Convert all numeric values to numbers (not strings)
-   - Extract any dynamic attributes for each line item (e.g., color, size, material, dimensions)
+   - Extract ALL dynamic attributes for each line item (color, size, material, dimensions, brand, model, weight, etc.)
    - Store dynamic attributes as name-value pairs (e.g., {"name": "color", "value": "red"})
+   - Pay special attention to product variations, SKUs, and detailed specifications
 
 8. ADVANCED RECOGNITION:
    - Handle handwritten text when possible
@@ -791,7 +792,11 @@ async function simulateFallbackOCR(
 /**
  * Suggest categories based on extracted invoice data
  */
-export async function suggestCategories(extractedData: ExtractedInvoiceData, preferredCategories: string[]): Promise<string[]> {
+export async function suggestCategories(
+  extractedData: ExtractedInvoiceData, 
+  preferredCategories: string[],
+  userId?: string
+): Promise<string[]> {
   // Implement more sophisticated category suggestions based on the invoice content
   const baseCategories = ['Office Supplies', 'Software', 'Hardware', 'Utilities', 'Rent', 'Travel', 'Meals', 'Marketing'];
   
@@ -846,20 +851,56 @@ export async function suggestCategories(extractedData: ExtractedInvoiceData, pre
     }
   }
   
-  // Filter preferred categories
-  const filteredCategories = suggestedCategories.filter(category => preferredCategories.includes(category));
+  const filteredCategories = preferredCategories.length > 0
+    ? suggestedCategories.filter(category => preferredCategories.includes(category))
+    : suggestedCategories;
+  
+  if (userId && extractedData.vendorName) {
+    const { getPersonalizedCategorySuggestions } = require('./ai-learning-service');
+    try {
+      return await getPersonalizedCategorySuggestions(
+        userId, 
+        extractedData.vendorName,
+        extractedData,
+        [...new Set(filteredCategories.length > 0 ? filteredCategories : suggestedCategories)]
+      );
+    } catch (error) {
+      console.error("Error getting personalized suggestions:", error);
+    }
+  }
   
   // Remove duplicates and limit to 8 suggestions
-  return [...new Set(filteredCategories)].slice(0, 8);
+  return [...new Set(filteredCategories.length > 0 ? filteredCategories : suggestedCategories)].slice(0, 8);
 }
 
 /**
  * Suggest vendors based on extracted data and existing vendors
  */
-export async function suggestVendors(extractedVendor: string, existingVendors: string[]) {
+export async function suggestVendors(
+  extractedVendor: string, 
+  existingVendors: string[],
+  userId?: string
+) {
   if (!extractedVendor) return existingVendors.slice(0, 5);
   
   const extractedLower = extractedVendor.toLowerCase();
+  
+  if (userId) {
+    try {
+      const { getPersonalizedVendorSuggestions } = require('./ai-learning-service');
+      const personalizedSuggestions = await getPersonalizedVendorSuggestions(
+        userId,
+        extractedVendor,
+        existingVendors
+      );
+      
+      if (personalizedSuggestions && personalizedSuggestions.length > 0) {
+        return personalizedSuggestions.slice(0, 5);
+      }
+    } catch (error) {
+      console.error("Error getting personalized vendor suggestions:", error);
+    }
+  }
   
   // Find close matches from existing vendors
   const matches = existingVendors.filter(vendor => {
@@ -960,4 +1001,4 @@ ${text}`;
     console.error("Error detecting language:", error);
     return "en";
   }
-}            
+}                                                                        

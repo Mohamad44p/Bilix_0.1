@@ -32,6 +32,8 @@ model User {
   aiSettings        AISettings?
   vendorPreferences VendorTypePreference[]
   role              UserRole       @default(USER)
+  inventoryItems    Inventory[]
+  aiFeedback        AIFeedback[]
 }
 
 // AI Settings model for user preferences
@@ -70,6 +72,7 @@ model Organization {
   vendors      Vendor[]
   conversations Conversation[]
   exports      ExportHistory[]
+  inventoryItems Inventory[]
 }
 
 // Invoice model
@@ -102,6 +105,8 @@ model Invoice {
   organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   analysis        AIAnalysis?
   lineItems       InvoiceLineItem[]
+  inventoryChanges InventoryHistory[]
+  aiFeedback      AIFeedback[]
 }
 
 // Category model for invoice categorization
@@ -244,4 +249,80 @@ model LineItemAttribute {
   updatedAt     DateTime  @updatedAt
   lineItemId    String
   lineItem      InvoiceLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+}
+
+// Inventory model for tracking stock levels
+model Inventory {
+  id              String    @id @default(cuid())
+  productName     String
+  description     String?   @db.Text
+  sku             String?
+  currentQuantity Int       @default(0)
+  unitOfMeasure   String?
+  category        String?
+  lastUpdated     DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  history         InventoryHistory[]
+  attributes      InventoryAttribute[]
+
+  @@index([productName])
+  @@index([sku])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+// Inventory history for tracking changes
+model InventoryHistory {
+  id              String    @id @default(cuid())
+  inventoryId     String
+  inventory       Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  previousQuantity Int
+  newQuantity     Int
+  changeReason    String    // "PURCHASE", "SALE", "ADJUSTMENT", "RETURN"
+  invoiceId       String?
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  timestamp       DateTime  @default(now())
+  notes           String?   @db.Text
+
+  @@index([inventoryId])
+  @@index([invoiceId])
+}
+
+// Inventory item attributes
+model InventoryAttribute {
+  id              String    @id @default(cuid())
+  name            String    // e.g., "color", "size", "material"
+  value           String    // e.g., "red", "large", "cotton"
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  inventoryId     String
+  inventory       Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId])
+  @@index([name, value])
+}
+
+// AI Feedback model for storing user corrections and improving AI learning
+model AIFeedback {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoiceId       String
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  field           String    // The field that was corrected
+  originalValue   String    @db.Text // AI's original extraction
+  correctedValue  String    @db.Text // User's correction
+  vendorName      String?   // For vendor-specific learning
+  confidence      Float     @default(0.5)
+  feedbackType    String    // "EXTRACTION", "CATEGORY", "VENDOR", "ATTRIBUTE"
+  timestamp       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([invoiceId])
+  @@index([feedbackType])
+  @@index([vendorName])
 }
