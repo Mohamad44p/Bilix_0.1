@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import db from "@/db/db";
+import { db } from "@/lib/db";
 import { z } from "zod";
 
 // Schema for line item validation
@@ -149,7 +149,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get line items for the invoice
-    const lineItems = await db.InvoiceLineItem.findMany({
+    const lineItems = await db.invoiceLineItem.findMany({
       where: {
         invoiceId,
       },
@@ -169,4 +169,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}              
+}                      
