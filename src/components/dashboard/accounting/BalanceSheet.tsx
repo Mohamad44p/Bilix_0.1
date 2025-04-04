@@ -16,18 +16,48 @@ export type BalanceSheetItem = {
 };
 
 export type BalanceSheetData = {
-  assets: BalanceSheetItem[];
-  liabilities: BalanceSheetItem[];
-  equity: BalanceSheetItem[];
-  totalAssets: number;
-  totalLiabilities: number;
-  totalEquity: number;
   asOfDate: Date;
+  assets: {
+    currentAssets: {
+      cashAndEquivalents: number;
+      accountsReceivable: number;
+      inventory: number;
+      prepaidExpenses: number;
+      total: number;
+    };
+    fixedAssets: {
+      propertyAndEquipment: number;
+      accumulatedDepreciation: number;
+      total: number;
+    };
+    totalAssets: number;
+  };
+  liabilities: {
+    currentLiabilities: {
+      accountsPayable: number;
+      shortTermDebt: number;
+      total: number;
+    };
+    longTermLiabilities: {
+      longTermDebt: number;
+      total: number;
+    };
+    totalLiabilities: number;
+  };
+  equity: {
+    ownersEquity: number;
+    retainedEarnings: number;
+    total: number;
+  };
+  changes: {
+    assetsChange: number;
+    liabilitiesChange: number;
+    equityChange: number;
+  };
   previousPeriod: {
     totalAssets: number;
     totalLiabilities: number;
-    totalEquity: number;
-    asOfDate: Date;
+    equity: number;
   };
 };
 
@@ -36,35 +66,47 @@ interface BalanceSheetProps {
 }
 
 const BalanceSheet = ({ data }: BalanceSheetProps) => {
-  const assetCategories = data.assets.reduce<Record<string, BalanceSheetItem[]>>((acc, item) => {
-    if (!acc[item.category]) {
-      acc[item.category] = [];
-    }
-    acc[item.category].push(item);
-    return acc;
-  }, {});
+  const assetCategories = {
+    "Current Assets": [
+      { id: "cash", name: "Cash & Equivalents", amount: data.assets.currentAssets.cashAndEquivalents, category: "Current Assets" },
+      { id: "ar", name: "Accounts Receivable", amount: data.assets.currentAssets.accountsReceivable, category: "Current Assets" },
+      { id: "inventory", name: "Inventory", amount: data.assets.currentAssets.inventory, category: "Current Assets" },
+      { id: "prepaid", name: "Prepaid Expenses", amount: data.assets.currentAssets.prepaidExpenses, category: "Current Assets" }
+    ],
+    "Fixed Assets": [
+      { id: "ppe", name: "Property & Equipment", amount: data.assets.fixedAssets.propertyAndEquipment, category: "Fixed Assets" },
+      { id: "accum-dep", name: "Accumulated Depreciation", amount: data.assets.fixedAssets.accumulatedDepreciation, category: "Fixed Assets" }
+    ]
+  };
 
-  const liabilityCategories = data.liabilities.reduce<Record<string, BalanceSheetItem[]>>((acc, item) => {
-    if (!acc[item.category]) {
-      acc[item.category] = [];
-    }
-    acc[item.category].push(item);
-    return acc;
-  }, {});
+  const liabilityCategories = {
+    "Current Liabilities": [
+      { id: "ap", name: "Accounts Payable", amount: data.liabilities.currentLiabilities.accountsPayable, category: "Current Liabilities" },
+      { id: "std", name: "Short-term Debt", amount: data.liabilities.currentLiabilities.shortTermDebt, category: "Current Liabilities" }
+    ],
+    "Long-term Liabilities": [
+      { id: "ltd", name: "Long-term Debt", amount: data.liabilities.longTermLiabilities.longTermDebt, category: "Long-term Liabilities" }
+    ]
+  };
 
-  const assetCategoryTotals = Object.entries(assetCategories).map(([category, items]) => ({
-    category,
-    total: items.reduce((sum, item) => sum + item.amount, 0)
-  }));
+  const equityItems = [
+    { id: "oe", name: "Owner's Equity", amount: data.equity.ownersEquity, category: "Equity" },
+    { id: "re", name: "Retained Earnings", amount: data.equity.retainedEarnings, category: "Equity" }
+  ];
 
-  const liabilityCategoryTotals = Object.entries(liabilityCategories).map(([category, items]) => ({
-    category,
-    total: items.reduce((sum, item) => sum + item.amount, 0)
-  }));
+  const assetCategoryTotals = [
+    { category: "Current Assets", total: data.assets.currentAssets.total },
+    { category: "Fixed Assets", total: data.assets.fixedAssets.total }
+  ];
 
-  const assetChangePercent = ((data.totalAssets - data.previousPeriod.totalAssets) / data.previousPeriod.totalAssets) * 100;
-  const liabilityChangePercent = ((data.totalLiabilities - data.previousPeriod.totalLiabilities) / data.previousPeriod.totalLiabilities) * 100;
-  const equityChangePercent = ((data.totalEquity - data.previousPeriod.totalEquity) / data.previousPeriod.totalEquity) * 100;
+  const liabilityCategoryTotals = [
+    { category: "Current Liabilities", total: data.liabilities.currentLiabilities.total },
+    { category: "Long-term Liabilities", total: data.liabilities.longTermLiabilities.total }
+  ];
+
+  const assetChangePercent = data.changes.assetsChange;
+  const liabilityChangePercent = data.changes.liabilitiesChange;
+  const equityChangePercent = data.changes.equityChange;
 
   return (
     <Card className="shadow-sm">
@@ -100,7 +142,7 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                   <CardTitle className="text-lg">Total Assets</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">${data.totalAssets.toFixed(2)}</div>
+                  <div className="text-2xl font-bold">${data.assets.totalAssets.toFixed(2)}</div>
                   <p className="text-sm text-muted-foreground">
                     {assetChangePercent >= 0 ? "+" : ""}
                     {assetChangePercent.toFixed(1)}% from previous period
@@ -113,7 +155,7 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                   <CardTitle className="text-lg">Total Liabilities</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">${data.totalLiabilities.toFixed(2)}</div>
+                  <div className="text-2xl font-bold">${data.liabilities.totalLiabilities.toFixed(2)}</div>
                   <p className="text-sm text-muted-foreground">
                     {liabilityChangePercent >= 0 ? "+" : ""}
                     {liabilityChangePercent.toFixed(1)}% from previous period
@@ -126,7 +168,7 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                   <CardTitle className="text-lg">Total Equity</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">${data.totalEquity.toFixed(2)}</div>
+                  <div className="text-2xl font-bold">${data.equity.total.toFixed(2)}</div>
                   <p className="text-sm text-muted-foreground">
                     {equityChangePercent >= 0 ? "+" : ""}
                     {equityChangePercent.toFixed(1)}% from previous period
@@ -153,13 +195,13 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                           <TableCell>{category.category}</TableCell>
                           <TableCell className="text-right">${category.total.toFixed(2)}</TableCell>
                           <TableCell className="text-right">
-                            {((category.total / data.totalAssets) * 100).toFixed(1)}%
+                            {((category.total / data.assets.totalAssets) * 100).toFixed(1)}%
                           </TableCell>
                         </TableRow>
                       ))}
                       <TableRow className="font-medium">
                         <TableCell>Total Assets</TableCell>
-                        <TableCell className="text-right">${data.totalAssets.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${data.assets.totalAssets.toFixed(2)}</TableCell>
                         <TableCell className="text-right">100%</TableCell>
                       </TableRow>
                     </TableBody>
@@ -168,7 +210,7 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
               </div>
               
               <div>
-                <h3 className="text-lg font-medium mb-2">Liabilities & Equity</h3>
+                <h3 className="text-lg font-medium mb-2">Liabilities &amp; Equity</h3>
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
@@ -184,20 +226,20 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                           <TableCell>{category.category}</TableCell>
                           <TableCell className="text-right">${category.total.toFixed(2)}</TableCell>
                           <TableCell className="text-right">
-                            {((category.total / (data.totalLiabilities + data.totalEquity)) * 100).toFixed(1)}%
+                            {((category.total / (data.liabilities.totalLiabilities + data.equity.total)) * 100).toFixed(1)}%
                           </TableCell>
                         </TableRow>
                       ))}
                       <TableRow>
                         <TableCell>Total Equity</TableCell>
-                        <TableCell className="text-right">${data.totalEquity.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${data.equity.total.toFixed(2)}</TableCell>
                         <TableCell className="text-right">
-                          {((data.totalEquity / (data.totalLiabilities + data.totalEquity)) * 100).toFixed(1)}%
+                          {((data.equity.total / (data.liabilities.totalLiabilities + data.equity.total)) * 100).toFixed(1)}%
                         </TableCell>
                       </TableRow>
                       <TableRow className="font-medium">
-                        <TableCell>Total Liabilities & Equity</TableCell>
-                        <TableCell className="text-right">${(data.totalLiabilities + data.totalEquity).toFixed(2)}</TableCell>
+                        <TableCell>Total Liabilities &amp; Equity</TableCell>
+                        <TableCell className="text-right">${(data.liabilities.totalLiabilities + data.equity.total).toFixed(2)}</TableCell>
                         <TableCell className="text-right">100%</TableCell>
                       </TableRow>
                     </TableBody>
@@ -220,16 +262,44 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.assets.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.name}</TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell className="text-right">${item.amount.toFixed(2)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {/* Current Assets */}
+                    <TableRow>
+                      <TableCell colSpan={2}>Cash &amp; Equivalents</TableCell>
+                      <TableCell className="text-right">${data.assets.currentAssets.cashAndEquivalents.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>Accounts Receivable</TableCell>
+                      <TableCell className="text-right">${data.assets.currentAssets.accountsReceivable.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>Inventory</TableCell>
+                      <TableCell className="text-right">${data.assets.currentAssets.inventory.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>Prepaid Expenses</TableCell>
+                      <TableCell className="text-right">${data.assets.currentAssets.prepaidExpenses.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell colSpan={2} className="font-medium">Total Current Assets</TableCell>
+                      <TableCell className="text-right">${data.assets.currentAssets.total.toFixed(2)}</TableCell>
+                    </TableRow>
+                    
+                    {/* Fixed Assets */}
+                    <TableRow className="mt-2">
+                      <TableCell colSpan={2}>Property &amp; Equipment</TableCell>
+                      <TableCell className="text-right">${data.assets.fixedAssets.propertyAndEquipment.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>Accumulated Depreciation</TableCell>
+                      <TableCell className="text-right">${data.assets.fixedAssets.accumulatedDepreciation.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell colSpan={2} className="font-medium">Total Fixed Assets</TableCell>
+                      <TableCell className="text-right">${data.assets.fixedAssets.total.toFixed(2)}</TableCell>
+                    </TableRow>
                     <TableRow className="font-medium">
                       <TableCell colSpan={2}>Total Assets</TableCell>
-                      <TableCell className="text-right">${data.totalAssets.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">${data.assets.totalAssets.toFixed(2)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -248,16 +318,32 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.liabilities.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.name}</TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell className="text-right">${item.amount.toFixed(2)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {/* Current Liabilities */}
+                    <TableRow>
+                      <TableCell colSpan={2}>Accounts Payable</TableCell>
+                      <TableCell className="text-right">${data.liabilities.currentLiabilities.accountsPayable.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>Short Term Debt</TableCell>
+                      <TableCell className="text-right">${data.liabilities.currentLiabilities.shortTermDebt.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell colSpan={2} className="font-medium">Total Current Liabilities</TableCell>
+                      <TableCell className="text-right">${data.liabilities.currentLiabilities.total.toFixed(2)}</TableCell>
+                    </TableRow>
+                    
+                    {/* Long Term Liabilities */}
+                    <TableRow className="mt-2">
+                      <TableCell colSpan={2}>Long Term Debt</TableCell>
+                      <TableCell className="text-right">${data.liabilities.longTermLiabilities.longTermDebt.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell colSpan={2} className="font-medium">Total Long Term Liabilities</TableCell>
+                      <TableCell className="text-right">${data.liabilities.longTermLiabilities.total.toFixed(2)}</TableCell>
+                    </TableRow>
                     <TableRow className="font-medium">
                       <TableCell colSpan={2}>Total Liabilities</TableCell>
-                      <TableCell className="text-right">${data.totalLiabilities.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">${data.liabilities.totalLiabilities.toFixed(2)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -276,16 +362,18 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.equity.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.name}</TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell className="text-right">${item.amount.toFixed(2)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {/* Equity Items */}
+                    <TableRow>
+                      <TableCell colSpan={2}>Owner's Equity</TableCell>
+                      <TableCell className="text-right">${data.equity.ownersEquity.toFixed(2)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>Retained Earnings</TableCell>
+                      <TableCell className="text-right">${data.equity.retainedEarnings.toFixed(2)}</TableCell>
+                    </TableRow>
                     <TableRow className="font-medium">
                       <TableCell colSpan={2}>Total Equity</TableCell>
-                      <TableCell className="text-right">${data.totalEquity.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">${data.equity.total.toFixed(2)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -294,8 +382,8 @@ const BalanceSheet = ({ data }: BalanceSheetProps) => {
             
             <div className="pt-4 border-t">
               <div className="flex justify-between items-center font-medium text-lg">
-                <span>Total Liabilities & Equity</span>
-                <span>${(data.totalLiabilities + data.totalEquity).toFixed(2)}</span>
+                <span>Total Liabilities &amp; Equity</span>
+                <span>${(data.liabilities.totalLiabilities + data.equity.total).toFixed(2)}</span>
               </div>
             </div>
           </TabsContent>
