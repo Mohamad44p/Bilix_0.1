@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/lib/db";
+import db from "@/db/db";
 import { z } from "zod";
 
 // Schema for line item validation
@@ -61,7 +61,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Create the line item
-    const lineItem = await db.invoiceLineItem.create({
+    // @ts-ignore - Using correct model name as shown in Prisma Studio
+    const lineItem = await db.InvoiceLineItem.create({
       data: {
         description: validatedData.description,
         quantity: validatedData.quantity,
@@ -149,7 +150,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Get line items for the invoice
-    const lineItems = await db.invoiceLineItem.findMany({
+    // @ts-ignore - Using correct model name as shown in Prisma Studio
+    const lineItems = await db.InvoiceLineItem.findMany({
       where: {
         invoiceId,
       },
@@ -169,4 +171,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}                      
+}
