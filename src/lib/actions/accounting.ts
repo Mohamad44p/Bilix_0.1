@@ -92,7 +92,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
   
   try {
     const now = new Date();
-    let startDate = new Date();
+    const startDate = new Date();
     
     if (period === "month") {
       startDate.setMonth(now.getMonth() - 1);
@@ -186,7 +186,7 @@ export async function getProfitLoss(period: "month" | "quarter" | "year") {
       value,
     }));
     
-    let previousStartDate = new Date(startDate);
+    const previousStartDate = new Date(startDate);
     if (period === "month") {
       previousStartDate.setMonth(previousStartDate.getMonth() - 1);
     } else if (period === "quarter") {
